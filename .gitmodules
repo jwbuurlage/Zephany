@@ -1,0 +1,8 @@
+[submodule "ext/epiphany-bsp"]
+	path = ext/epiphany-bsp
+	url = git@github.com:coduin/epiphany-bsp.git
+	branch = develop
+[submodule "ext/zee"]
+	path = ext/zee
+	url = git@git.codu.in:jwbuurlage/zee.git
+	branch = develop
