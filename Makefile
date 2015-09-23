@@ -1,4 +1,4 @@
-CCPP = g++
+CCPP = arm-linux-gnueabi-g++
 CCPP_FLAGS = -std=c++14 -Wfatal-errors -Wall -g
 
 OUTPUT_DIR = bin
