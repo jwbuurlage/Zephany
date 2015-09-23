@@ -1,5 +1,5 @@
 CCPP = arm-linux-gnueabi-g++
-CCPP_FLAGS = -std=c++14 -Wfatal-errors -Wall -g
+CCPP_FLAGS = -static -std=c++14 -Wfatal-errors -Wall -g
 
 OUTPUT_DIR = bin
 INCLUDE_DIRS = -Iinclude -Iext/zee/include
