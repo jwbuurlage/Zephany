@@ -1,2 +1,2 @@
 #/usr/bin/bash
-ssh parallella ~/zephany/bin/$1
+ssh parallella ~/zephany/$1
