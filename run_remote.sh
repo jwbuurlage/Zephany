@@ -1,2 +1,3 @@
 #/usr/bin/bash
-ssh parallella ~/zephany/$1
+rsync -r bin parallella:~/zephany
+ssh parallella "source ~/.bashrc; ~/zephany/$1"
