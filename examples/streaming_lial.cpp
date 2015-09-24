@@ -17,8 +17,8 @@ int main()
     // DENSE
     int n = 16;
 
-    DStreamingMatrix<> A(n, n);
-    DStreamingMatrix<> B(n, n);
+    DStreamingMatrix<TVal, TIdx> A(n, n);
+    DStreamingMatrix<TVal, TIdx> B(n, n);
 
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j) {
@@ -26,18 +26,18 @@ int main()
             B.at(i, j) = (float)j;
         }
 
-    DStreamingMatrix<> C(n, n);
+    DStreamingMatrix<TVal, TIdx> C(n, n);
     C = A * B;
     ZeeLogVar(C.at(0, 0));
 
     // SPARSE
     // We initialize the matrix with cyclic distribution
-    std::string matrix = "steam3";
+    /* std::string matrix = "steam3";
     auto S = DStreamingSparseMatrix<TVal, TIdx>("/home/jw/zephany/data/matrices/" + matrix + ".mtx", 4);
     DStreamingVector<TVal, TIdx> x(S.getCols(), 1.0);
     DStreamingVector<TVal, TIdx> y(S.getRows(), 1.0);
     y = S * x;
-    y = S * x;
+    y = S * x; */
 
     return 0;
 }

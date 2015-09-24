@@ -27,9 +27,11 @@ E_LIB_NAMES = -le-bsp -le-lib
 
 
 # Prerequisites
-all: dirs hello_ebsp bin/kernels/k_hello_world.srec streaming_lial bin/kernels/k_spmv.srec
+all: dirs examples kernels
 
-hello_world: bin/kernels/k_hello_world.srec
+kernels: bin/kernels/k_hello_world.srec bin/kernels/k_spmv.srec bin/kernels/k_cannon.srec
+
+examples: streaming_lial hello_ebsp
 
 dirs:
 	@mkdir -p ${OUTPUT_DIR}
@@ -60,6 +62,12 @@ bin/kernels/k_hello_world.elf: kernels/k_hello_world.c
 bin/kernels/k_spmv.elf: kernels/k_spmv.c
 	@echo 'ECC $@'
 	@${EGCC} ${E_CFLAGS} -T ${E_LDF} ${E_INCLUDES} -o $@ $< ${E_LIBS} ${E_LIB_NAMES}
+
+bin/kernels/k_cannon.elf: kernels/k_cannon.c
+	@echo 'ECC $@'
+	@${EGCC} ${E_CFLAGS} -T ${E_LDF} ${E_INCLUDES} -o $@ $< ${E_LIBS} ${E_LIB_NAMES}
+
+
 
 clean:
 	rm -r bin
