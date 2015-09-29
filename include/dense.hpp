@@ -15,13 +15,30 @@ class DStreamingMatrix
 
         DStreamingMatrix(TIdx rows, TIdx cols)
             : Base(rows, cols) {
-            resize(rows, cols);
+            resize(rows, cols),
+            stream_(stream_direction::down);
         }
 
         explicit DStreamingMatrix(std::string file)
             : Base(0, 0)
         {
             matrix_market::load(file, *this);
+        }
+
+        explicit DStreamingMatrix(const Stream& upStream)
+        {
+            ZeeAssert(upStream.direction == stream_direction::up);
+        }
+
+        const MatrixBlockStream<TVal>& getStream() const {
+            if (!stream_.isInitialized()) {
+                stream_.setChunkSize();
+                stream_.setTotalSize();
+                stream_.feed(elements_);
+                stream_.setInitialized();
+            }
+
+            return stream_;
         }
 
         //////////////////////////////////////////////////////////////////////////////
@@ -45,9 +62,11 @@ class DStreamingMatrix
         }
         //////////////////////////////////////////////////////////////////////////////
 
+
     private:
         // stored column major
         std::vector<std::vector<TVal>> elements_;
+        MatrixBlockStream<TVal> stream_;
 };
 
 } // namespace Zephany

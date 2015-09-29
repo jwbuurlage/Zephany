@@ -58,24 +58,31 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     bsp_init("kernels/k_cannon.srec", 0, 0);
 
     // FIXME: config?
-    bsp_begin(16);
-    int matrixSize = A.size();
-    int blockSize = 4;
-    int N = 4;
-    int M = matrixSize / (N * blockSize);
+    bsp_begin(N * N);
 
-    /* int N = 4;
-     * for (int s = 0; s < N * N; s++) {
-     *     ebsp_create_down_stream(stream_A[s], s, matrix_bytes / (N * N), CORE_BLOCK_BYTES);
-     *     ebsp_create_down_stream(stream_B[s], s, matrix_bytes / (N * N), CORE_BLOCK_BYTES);
-     *     ebsp_send_down(s, &tag, &M, sizeof(int));
-     *     up_streams[s] = ebsp_create_up_stream(s,              // core id
-     *             block_count * block_count * CORE_BLOCK_BYTES, // total size
-     *             CORE_BLOCK_BYTES);                            // stream size
-     * } */
+    const auto& lhsStream = A.getStream();
+    const auto& rhsStream = B.getStream();
+    lhsStream.setRepresentation(representation::row_major);
+    lhsStream.setRepresentation(representation::column_major);
 
-    // open the streams
+    Stream upStream(stream_type::up_stream);
+    upStream.setChunkSize(0);
+    upStream.setTotalSize(0);
+    upStream.setInitialized();
+
+    lhsStream.create();
+    rhsStream.create();
+    upStream.create();
+
+    for (int s = 0; s < stream_config::processors; ++s) {
+        ebsp_send_down(s, &tag, &M, sizeof(int));
+        // ...
+    }
+
     ebsp_spmd();
+
+    // FIXME put result in new matrix C
+    DStreamingMatrix C(upStream);
 
     bsp_end();
 
