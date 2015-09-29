@@ -1,4 +1,4 @@
-namespace Zephany {
+namespace zephany {
 
 using namespace Zee;
 
@@ -18,4 +18,4 @@ class DStreamingSparseMatrix :
         { }
 };
 
-} // namespace Zephany
+} // namespace zephany

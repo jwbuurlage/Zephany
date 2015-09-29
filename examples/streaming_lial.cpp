@@ -5,10 +5,9 @@
 #include <zephany.hpp>
 
 using namespace Zee;
-using namespace Zephany;
+using namespace zephany;
 
-int main()
-{
+int main() {
     using TVal = double;
     using TIdx = int;
 
@@ -33,7 +32,8 @@ int main()
     // SPARSE
     // We initialize the matrix with cyclic distribution
     /* std::string matrix = "steam3";
-    auto S = DStreamingSparseMatrix<TVal, TIdx>("/home/jw/zephany/data/matrices/" + matrix + ".mtx", 4);
+    auto S = DStreamingSparseMatrix<TVal,
+    TIdx>("/home/jw/zephany/data/matrices/" + matrix + ".mtx", 4);
     DStreamingVector<TVal, TIdx> x(S.getCols(), 1.0);
     DStreamingVector<TVal, TIdx> y(S.getRows(), 1.0);
     y = S * x;

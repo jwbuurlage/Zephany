@@ -2,7 +2,9 @@ extern "C" {
 #include <host_bsp.h>
 }
 
-namespace Zephany {
+#include "streams.hpp"
+
+namespace zephany {
 
 using namespace Zee;
 
@@ -58,31 +60,31 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     bsp_init("kernels/k_cannon.srec", 0, 0);
 
     // FIXME: config?
-    bsp_begin(N * N);
+    bsp_begin(stream_config::N * stream_config::N);
 
     const auto& lhsStream = A.getStream();
-    const auto& rhsStream = B.getStream();
-    lhsStream.setRepresentation(representation::row_major);
-    lhsStream.setRepresentation(representation::column_major);
-
-    Stream upStream(stream_type::up_stream);
-    upStream.setChunkSize(0);
-    upStream.setTotalSize(0);
-    upStream.setInitialized();
-
-    lhsStream.create();
-    rhsStream.create();
-    upStream.create();
-
-    for (int s = 0; s < stream_config::processors; ++s) {
-        ebsp_send_down(s, &tag, &M, sizeof(int));
-        // ...
-    }
+//    const auto& rhsStream = B.getStream();
+//    lhsStream.setRepresentation(representation::row_major);
+//    lhsStream.setRepresentation(representation::column_major);
+//
+//    Stream upStream(stream_type::up_stream);
+//    upStream.setChunkSize(0);
+//    upStream.setTotalSize(0);
+//    upStream.setInitialized();
+//
+//    lhsStream.create();
+//    rhsStream.create();
+//    upStream.create();
+//
+//    for (int s = 0; s < stream_config::processors; ++s) {
+//        ebsp_send_down(s, &tag, &M, sizeof(int));
+//        // ...
+//    }
 
     ebsp_spmd();
 
-    // FIXME put result in new matrix C
-    DStreamingMatrix C(upStream);
+//    // FIXME put result in new matrix C
+//    DStreamingMatrix C(upStream);
 
     bsp_end();
 
@@ -91,4 +93,4 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     return DStreamingMatrix<TVal, TIdx>(1, 1);
 }
 
-} // namespace Zephany
+} // namespace zephany
