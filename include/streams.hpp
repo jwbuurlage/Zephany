@@ -2,9 +2,14 @@
 
 #include <zee.hpp>
 
-#include <vector>
+extern "C" {
+#include <host_bsp.h>
+}
 
-namespace zephany {
+#include <vector>
+#include <algorithm>
+
+namespace Zephany {
 
 namespace stream_config {
 constexpr int N = 4;
@@ -22,7 +27,6 @@ class Stream {
     void setTotalSize(int totalSize) { totalSize_ = totalSize; }
     void setInitialized() { initialized_ = true; }
 
-    virtual void feed(const std::vector<T>& data) = 0;
     virtual void create() = 0;
 
   protected:
@@ -64,21 +68,20 @@ class MatrixBlockStream : public Stream<T> {
         if (orientation_ == orientation)
             return;
 
-        // fix if necessary
-        // isRowMajor_ = rowMajor;
+        transposeStream_();
+
+        orientation_ = orientation;
     }
 
     void create() override {
         // bsp this and that for each processor and such
-        //            for (int s = 0; s < N * N; s++) {
-        //                ebsp_create_down_stream(DATA,
-        //                        s,
-        //                        TOTAL_STREAM_SIZE,
-        //                        CHUNK_SIZE);
-        //            }
+        for (int s = 0; s < stream_config::N * stream_config::N; s++) {
+            //ebsp_create_down_stream(&(this->data_[s]), s, this->totalSize_,
+            //                        this->chunkSize_);
+        }
     }
 
-    void feed(const std::vector<T>& data) override {
+    void feedElements(const std::vector<std::vector<T>>& data) {
         ZeeAssert(this->chunkSize_ != 0);
         ZeeAssert(this->totalSize_ != 0);
 
@@ -86,36 +89,75 @@ class MatrixBlockStream : public Stream<T> {
             this->data_[s].reserve(this->totalSize_);
         }
 
-        for (auto& elem : data) {
-            // here we make the stream
-            ZeeLogVar(elem);
+        // This is always laid out left-handed (row major)
+        for (int blockI = 0; blockI < outerBlocks_; ++blockI)
+        for (int blockJ = 0; blockJ < outerBlocks_; ++blockJ) {
+            int blockOffsetI = blockI * outerBlockSize_;
+            int blockOffsetJ = blockJ * outerBlockSize_;
+            for (int s = 0; s < stream_config::N; ++s)
+            for (int t = 0; t < stream_config::N; ++t) {
+                int procOffsetI = s * innerBlockSize_;
+                int procOffsetJ = t * innerBlockSize_;
+                for (int i = 0; i < innerBlockSize_; ++i)
+                for (int j = 0; j < innerBlockSize_; ++j) {
+                    this->data_[s * stream_config::N + t].push_back(
+                        data[blockOffsetI + procOffsetI + i][blockOffsetJ +
+                                                             procOffsetJ + j]);
+                }
+            }
         }
 
-    //    for (int block = 0; block < block_count * block_count; ++block) {
-    //        int blockI = block / block_count;
-    //        int blockJ = block % block_count;
-    //        int baseColumn = blockJ * BLOCK_SIZE;
-    //        int baseRow = blockI * BLOCK_SIZE;
-    //        for (int proc = 0; proc < N * N; ++proc) {
-    //            int s = proc / N;
-    //            int t = proc % N;
-    //            int coreBlockColumn = baseColumn + t * CORE_BLOCK_SIZE;
-    //            int coreBlockRow = baseRow + s * CORE_BLOCK_SIZE;
-    //            for (int i = 0; i < CORE_BLOCK_SIZE; ++i) {
-    //                for (int j = 0; j < CORE_BLOCK_SIZE; ++j) {
-    //                    C[(coreBlockRow + i) * matrix_size + coreBlockColumn + j] =
-    //                        up_streams[proc][cur_index[proc]++];
-    //                }
-    //            }
-    //        }
-    //    }
+        ZeeLogVar(this->data_[0]);
+    }
+
+    void setInner(int count, int size) {
+        innerBlocks_ = count;
+        innerBlockSize_ = size;
+    }
+
+    void setOuter(int count, int size) {
+        outerBlocks_ = count;
+        outerBlockSize_ = size;
+    }
+
+    void setMatrixSize(int matrixSize) { matrixSize_ = matrixSize; }
+
+    void computeChunkSize() {
+        ZeeAssert(innerBlocks_ != 0);
+        ZeeAssert(innerBlockSize_ != 0);
+        ZeeAssert(outerBlocks_ != 0);
+        ZeeAssert(matrixSize_ != 0);
+
+        this->chunkSize_ = innerBlockSize_ * innerBlockSize_ * sizeof(T);
+        this->totalSize_ = outerBlocks_ * outerBlocks_ * this->chunkSize_;
+
+        ZeeLogVar(this->chunkSize_);
+        ZeeLogVar(this->totalSize_);
     }
 
   private:
+    void transposeStream_() {
+        int sizePerChunkRow = this->chunkSize_ * outerBlocks_;
+        // row major blocks to column major
+        for (int s = 0; s < stream_config::N * stream_config::N; ++s) {
+            for (int chunkI = 1; chunkI < outerBlocks_; ++chunkI)
+            for (int chunkJ = 0; chunkJ < chunkI; ++chunkJ) {
+                int offset = chunkI * sizePerChunkRow + chunkJ * this->chunkSize_;
+                int targetOffset =
+                    chunkJ * sizePerChunkRow + chunkI * this->chunkSize_;
+                std::swap_ranges(this->data[s].begin() + offset,
+                                 this->data[s].begin() + offset +
+                                     this->chunkSize_,
+                                 this->data[s].begin() + targetOffset);
+            }
+        }
+    }
+
     stream_orientation orientation_ = stream_orientation::left_handed;
     int innerBlocks_ = 0;
     int innerBlockSize_ = 0;
     int outerBlocks_ = 0;
+    int outerBlockSize_ = 0;
     int matrixSize_ = 0;
 };
 

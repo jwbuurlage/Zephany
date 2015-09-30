@@ -1,4 +1,4 @@
-namespace zephany {
+namespace Zephany {
 
 using namespace Zee;
 

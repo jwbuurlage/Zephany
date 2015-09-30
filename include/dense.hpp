@@ -2,7 +2,7 @@
 
 #include "streams.hpp"
 
-namespace zephany {
+namespace Zephany {
 
 using namespace Zee;
 
@@ -31,7 +31,7 @@ class DStreamingMatrix
         initializeStream();
     }
 
-    const MatrixBlockStream<TVal>& getStream() { return stream_; }
+    const MatrixBlockStream<TVal>& getStream() const { return stream_; }
 
     //--------------------------------------------------------------------------
     // FIXME: this repeats DMatrix, do we actually want different storage here??
@@ -52,16 +52,24 @@ class DStreamingMatrix
     }
     //--------------------------------------------------------------------------
 
+    // Look into partial updates?
+    void updateStream() {
+        stream_.feedElements(elements_);
+    }
+
   private:
     void initializeStream() {
         constexpr int innerBlocks = stream_config::N;
-        constexpr int innerBlockSize = 32;
-        const int outerBlocks = this->rows_ / (innerBlocks * innerBlockSize);
+        constexpr int innerBlockSize = 8;
+        const int outerBlockSize = innerBlocks * innerBlockSize;
+        const int outerBlocks =
+            this->getRows() / outerBlockSize;
+        ZeeAssert(this->getRows() % outerBlockSize == 0);
 
-        stream_.setInnerBlocks(innerBlocks);
-        stream_.setInnerBlockSize(innerBlockSize);
-        stream_.setOuterBlocks(outerBlocks);
-        stream_.feed(elements_);
+        stream_.setInner(innerBlocks, innerBlockSize);
+        stream_.setOuter(outerBlocks, outerBlockSize);
+        stream_.setMatrixSize(this->getRows());
+        stream_.computeChunkSize();
     }
 
     // stored column major

@@ -4,7 +4,7 @@ extern "C" {
 
 #include "streams.hpp"
 
-namespace zephany {
+namespace Zephany {
 
 using namespace Zee;
 
@@ -57,10 +57,10 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     // FIXME if long enough
 
     // Initialize the BSP system
-    bsp_init("kernels/k_cannon.srec", 0, 0);
-
-    // FIXME: config?
-    bsp_begin(stream_config::N * stream_config::N);
+//    bsp_init("kernels/k_cannon.srec", 0, 0);
+//
+//    // FIXME: config?
+//    bsp_begin(stream_config::N * stream_config::N);
 
     const auto& lhsStream = A.getStream();
 //    const auto& rhsStream = B.getStream();
@@ -81,12 +81,12 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
 //        // ...
 //    }
 
-    ebsp_spmd();
+//    ebsp_spmd();
 
 //    // FIXME put result in new matrix C
 //    DStreamingMatrix C(upStream);
 
-    bsp_end();
+ //   bsp_end();
 
     // need to check if both matrices have streams ready
     // or already in extmem -- etc.

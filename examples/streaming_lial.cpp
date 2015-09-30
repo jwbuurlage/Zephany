@@ -5,16 +5,16 @@
 #include <zephany.hpp>
 
 using namespace Zee;
-using namespace zephany;
+using namespace Zephany;
 
 int main() {
-    using TVal = double;
+    using TVal = float;
     using TIdx = int;
 
     ZeeLogInfo << "-- Starting Epiphany example" << endLog;
 
     // DENSE
-    int n = 16;
+    int n = 64;
 
     DStreamingMatrix<TVal, TIdx> A(n, n);
     DStreamingMatrix<TVal, TIdx> B(n, n);
@@ -24,6 +24,8 @@ int main() {
             A.at(i, j) = (float)i;
             B.at(i, j) = (float)j;
         }
+    A.updateStream();
+    B.updateStream();
 
     DStreamingMatrix<TVal, TIdx> C(n, n);
     C = A * B;
