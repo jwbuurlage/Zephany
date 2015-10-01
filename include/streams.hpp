@@ -25,9 +25,13 @@ class Stream {
 
     void setChunkSize(int chunkSize) { chunkSize_ = chunkSize; }
     void setTotalSize(int totalSize) { totalSize_ = totalSize; }
+
+    int getChunkSize() const { return chunkSize_; }
+    int getTotalSize() const { return totalSize_; }
+
     void setInitialized() { initialized_ = true; }
 
-    virtual void create() = 0;
+    virtual void create() const = 0;
 
   protected:
     // these are per processor
@@ -64,7 +68,7 @@ class MatrixBlockStream : public Stream<T> {
     MatrixBlockStream(stream_direction direction) : Stream<T>(direction) {}
 
     /* Switch stream arrangement (for LHS/RHS of matrix operations) */
-    void setRepresentation(stream_orientation orientation) {
+    void setOrientation(stream_orientation orientation) {
         if (orientation_ == orientation)
             return;
 
@@ -73,11 +77,12 @@ class MatrixBlockStream : public Stream<T> {
         orientation_ = orientation;
     }
 
-    void create() override {
+    void create() const override {
+        int totalSize = this->getTotalSize();
+        int chunkSize = this->getChunkSize();
         // bsp this and that for each processor and such
         for (int s = 0; s < stream_config::N * stream_config::N; s++) {
-            //ebsp_create_down_stream(&(this->data_[s]), s, this->totalSize_,
-            //                        this->chunkSize_);
+            ebsp_create_down_stream(&(this->data_[s]), s, totalSize, chunkSize);
         }
     }
 
@@ -120,6 +125,10 @@ class MatrixBlockStream : public Stream<T> {
         outerBlockSize_ = size;
     }
 
+    int getInnerBlockSize() const { return innerBlockSize_; }
+
+    int getOuterBlocks() const { return outerBlocks_; }
+
     void setMatrixSize(int matrixSize) { matrixSize_ = matrixSize; }
 
     void computeChunkSize() {
@@ -145,10 +154,10 @@ class MatrixBlockStream : public Stream<T> {
                 int offset = chunkI * sizePerChunkRow + chunkJ * this->chunkSize_;
                 int targetOffset =
                     chunkJ * sizePerChunkRow + chunkI * this->chunkSize_;
-                std::swap_ranges(this->data[s].begin() + offset,
-                                 this->data[s].begin() + offset +
+                std::swap_ranges(this->data_[s].begin() + offset,
+                                 this->data_[s].begin() + offset +
                                      this->chunkSize_,
-                                 this->data[s].begin() + targetOffset);
+                                 this->data_[s].begin() + targetOffset);
             }
         }
     }

@@ -31,6 +31,7 @@ class DStreamingMatrix
         initializeStream();
     }
 
+    MatrixBlockStream<TVal>& getStream() { return stream_; }
     const MatrixBlockStream<TVal>& getStream() const { return stream_; }
 
     //--------------------------------------------------------------------------

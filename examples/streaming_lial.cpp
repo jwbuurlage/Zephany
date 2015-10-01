@@ -26,6 +26,8 @@ int main() {
         }
     A.updateStream();
     B.updateStream();
+    A.getStream().setOrientation(stream_orientation::left_handed);
+    B.getStream().setOrientation(stream_orientation::right_handed);
 
     DStreamingMatrix<TVal, TIdx> C(n, n);
     C = A * B;

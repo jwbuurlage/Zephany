@@ -57,36 +57,49 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     // FIXME if long enough
 
     // Initialize the BSP system
-//    bsp_init("kernels/k_cannon.srec", 0, 0);
-//
-//    // FIXME: config?
-//    bsp_begin(stream_config::N * stream_config::N);
+    bsp_init("kernels/k_cannon.srec", 0, 0);
+
+    // FIXME: config?
+    bsp_begin(stream_config::N * stream_config::N);
 
     const auto& lhsStream = A.getStream();
-//    const auto& rhsStream = B.getStream();
-//    lhsStream.setRepresentation(representation::row_major);
-//    lhsStream.setRepresentation(representation::column_major);
-//
-//    Stream upStream(stream_type::up_stream);
-//    upStream.setChunkSize(0);
-//    upStream.setTotalSize(0);
-//    upStream.setInitialized();
-//
-//    lhsStream.create();
-//    rhsStream.create();
-//    upStream.create();
-//
-//    for (int s = 0; s < stream_config::processors; ++s) {
-//        ebsp_send_down(s, &tag, &M, sizeof(int));
-//        // ...
-//    }
+    const auto& rhsStream = B.getStream();
+    // non-const..
+    // lhsStream.setOrientation(stream_orientation::left_handed);
+    // rhsStream.setOrientation(stream_orientation::right_handed);
 
-//    ebsp_spmd();
+    //Stream<TVal> upStream(stream_type::up_stream);
+    //upStream.setChunkSize(0); // FIXME
+    //upStream.setTotalSize(0); // FIXME
+
+    lhsStream.create();
+    rhsStream.create();
+    //upStream.create();
+
+
+    // send Cannon parameters down to the kernel
+    int tagsize = sizeof(int);
+    ebsp_set_tagsize(&tagsize);
+
+    int innerBlockSize = lhsStream.getInnerBlockSize();
+    int outerBlocks = lhsStream.getOuterBlocks();
+    int N = stream_config::N;
+
+    for (int s = 0; s < stream_config::processors; ++s) {
+        int tag = 0;
+        ebsp_send_down(s, &tag, &innerBlockSize, sizeof(int));
+        tag = 1;
+        ebsp_send_down(s, &tag, &outerBlocks, sizeof(int));
+        tag = 2;
+        ebsp_send_down(s, &tag, &N, sizeof(int));
+    }
+
+    ebsp_spmd();
 
 //    // FIXME put result in new matrix C
 //    DStreamingMatrix C(upStream);
 
- //   bsp_end();
+    bsp_end();
 
     // need to check if both matrices have streams ready
     // or already in extmem -- etc.
