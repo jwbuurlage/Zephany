@@ -68,22 +68,21 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
     // lhsStream.setOrientation(stream_orientation::left_handed);
     // rhsStream.setOrientation(stream_orientation::right_handed);
 
-    //Stream<TVal> upStream(stream_type::up_stream);
-    //upStream.setChunkSize(0); // FIXME
-    //upStream.setTotalSize(0); // FIXME
+    int innerBlockSize = lhsStream.getInnerBlockSize();
+    int outerBlocks = lhsStream.getOuterBlocks();
+    int N = stream_config::N;
 
+    UpStream<TVal> upStream;
+    upStream.setChunkSize(innerBlockSize * sizeof(float));
+    upStream.setTotalSize(outerBlocks * outerBlocks * innerBlockSize *
+                          sizeof(float));
     lhsStream.create();
     rhsStream.create();
-    //upStream.create();
-
+    upStream.createUp();
 
     // send Cannon parameters down to the kernel
     int tagsize = sizeof(int);
     ebsp_set_tagsize(&tagsize);
-
-    int innerBlockSize = lhsStream.getInnerBlockSize();
-    int outerBlocks = lhsStream.getOuterBlocks();
-    int N = stream_config::N;
 
     for (int s = 0; s < stream_config::processors; ++s) {
         int tag = 0;
@@ -96,14 +95,14 @@ DStreamingMatrix<TVal, TIdx> perform_operation(
 
     ebsp_spmd();
 
-//    // FIXME put result in new matrix C
-//    DStreamingMatrix C(upStream);
+    // FIXME put result in new matrix C
+    DStreamingMatrix<TVal, TIdx> C(A.getRows(), B.getCols(), upStream);
 
     bsp_end();
 
     // need to check if both matrices have streams ready
     // or already in extmem -- etc.
-    return DStreamingMatrix<TVal, TIdx>(1, 1);
+    return C;
 }
 
 } // namespace zephany

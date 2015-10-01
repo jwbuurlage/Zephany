@@ -25,9 +25,10 @@ E_LIBS = -L${EBSP}/lib \
 		 -L/home/jw/adapteva#${ESDK}/tools/e-gnu/epiphany-elf/lib
 E_LIB_NAMES = -le-bsp -le-lib
 
+TEST_SOURCES = test/catch.cpp test/streams.cpp
 
 # Prerequisites
-all: dirs examples kernels
+all: dirs examples kernels tests
 
 kernels: bin/kernels/k_hello_world.srec bin/kernels/k_spmv.srec bin/kernels/k_cannon.srec
 
@@ -67,7 +68,10 @@ bin/kernels/k_cannon.elf: kernels/k_cannon.c
 	@echo 'ECC $@'
 	@${EGCC} ${E_CFLAGS} -T ${E_LDF} ${E_INCLUDES} -o $@ $< ${E_LIBS} ${E_LIB_NAMES}
 
-
+tests: $(TEST_SOURCES)
+	@echo 'Compiling tests'
+	@echo 'CC $(TEST_SOURCES)'
+	@${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ ${TEST_SOURCES} ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 
 clean:
 	rm -r bin

@@ -14,7 +14,7 @@ int main() {
     ZeeLogInfo << "-- Starting Epiphany example" << endLog;
 
     // DENSE
-    int n = 64;
+    int n = 16;
 
     DStreamingMatrix<TVal, TIdx> A(n, n);
     DStreamingMatrix<TVal, TIdx> B(n, n);
@@ -24,6 +24,9 @@ int main() {
             A.at(i, j) = (float)i;
             B.at(i, j) = (float)j;
         }
+
+    // TODO how to do this dynamically (i.e. in the operation without discarding
+    // const qualifier)
     A.updateStream();
     B.updateStream();
     A.getStream().setOrientation(stream_orientation::left_handed);
@@ -31,7 +34,7 @@ int main() {
 
     DStreamingMatrix<TVal, TIdx> C(n, n);
     C = A * B;
-    ZeeLogVar(C.at(0, 0));
+    ZeeLogVar(C);
 
     // SPARSE
     // We initialize the matrix with cyclic distribution

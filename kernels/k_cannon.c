@@ -33,19 +33,18 @@ int main() {
     float* a_data[2];
     float* b_data[2];
     // FIXME = 0
-    float* c_data = ebsp_malloc(inner_block_bytes);
+    float* c_data = 0;
 
     // Whether we want to use double-buffering for C
     const int fastmode = 0;
 
-    ebsp_message("%i", __LINE__);
     // Allocate local buffers
     ebsp_open_down_stream((void**)&a_data[0], 0);
     a_data[1] = ebsp_malloc(inner_block_bytes);
     ebsp_open_down_stream((void**)&b_data[0], 1);
     b_data[1] = ebsp_malloc(inner_block_bytes);
 
-    //ebsp_open_up_stream((void**)&c_data, 2);
+    ebsp_open_up_stream((void**)&c_data, 2);
 
     // Set C to zero
     for (int i = 0; i < inner_block_size * inner_block_size; ++i) {
@@ -61,7 +60,6 @@ int main() {
     bsp_sync();
     bsp_push_reg(b_data[1], inner_block_bytes);
     bsp_sync();
-    ebsp_message("%i", __LINE__);
 
     // We store our neighbor's buffer locations
     float* neighbor_a_data[2];
@@ -77,13 +75,9 @@ int main() {
     ebsp_dma_handle dma_handle_a;
     ebsp_dma_handle dma_handle_b;
 
-    ebsp_message("%i", __LINE__);
-
     // Make sure the host is awake. FIXME temporary
     ebsp_host_sync();
     ebsp_barrier();
-
-    ebsp_message("%i", __LINE__);
 
     // Loop over the outer blocks (chunks)
     int total_block_count = outer_blocks * outer_blocks * outer_blocks;
@@ -100,12 +94,12 @@ int main() {
             if (cur_block % outer_blocks == 0) {
                 // Send result of C upwards
                 // FIXME THIS SHOULD GIVE ERROR IF 2 DOES NOT EXIST
-                // ebsp_move_chunk_up((void*)&c_data, 2, fastmode);
-                ebsp_message("%i (%i, %i, %i, ..., %i)",
-                     cur_block, (int)c_data[0],
-                     (int)c_data[1],
-                     (int)c_data[2],
-                     (int)c_data[CORE_BLOCK_SIZE * CORE_BLOCK_SIZE - 1]);
+                ebsp_move_chunk_up((void*)&c_data, 2, fastmode);
+                //ebsp_message("%i (%i, %i, %i, ..., %i)",
+                //     cur_block, (int)c_data[0],
+                //     (int)c_data[1],
+                //     (int)c_data[2],
+                //     (int)c_data[inner_block_size * inner_block_size - 1]);
                 ebsp_barrier();
 
                 // FIXME find more elegant way of accomplishing this.
@@ -126,6 +120,12 @@ int main() {
         ebsp_move_chunk_down((void**)&b_data[0], // address
                              1,                  // stream id
                              0);                 // double buffered mode
+
+//        ebsp_message("a: %i (%i, %i, %i, ..., %i)",
+//             cur_block, (int)a_data[0][0],
+//             (int)a_data[0][1],
+//             (int)a_data[0][2],
+//             (int)a_data[0][inner_block_size * inner_block_size - 1]);
 
         // Define indices into our buffers
         int cur = 0;        // computation
@@ -161,7 +161,7 @@ int main() {
 
     ebsp_close_down_stream(0);
     ebsp_close_down_stream(1);
-    //ebsp_close_up_stream(2);
+    ebsp_close_up_stream(2);
 
     bsp_end();
 }

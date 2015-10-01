@@ -12,8 +12,8 @@ extern "C" {
 namespace Zephany {
 
 namespace stream_config {
-constexpr int N = 4;
-constexpr int processors = N * N;
+static constexpr int N = 4;
+static constexpr int processors = N * N;
 }
 
 enum class stream_direction { up, down };
@@ -29,6 +29,10 @@ class Stream {
     int getChunkSize() const { return chunkSize_; }
     int getTotalSize() const { return totalSize_; }
 
+    std::array<std::vector<T>, stream_config::processors>& getData() {
+        return data_;
+    }
+
     void setInitialized() { initialized_ = true; }
 
     virtual void create() const = 0;
@@ -39,10 +43,33 @@ class Stream {
     int totalSize_ = 0;
 
     // we support upwards and downward streams
-    stream_direction direction_ = false;
+    stream_direction direction_ = stream_direction::down;
 
     std::array<std::vector<T>, stream_config::processors> data_;
     bool initialized_ = false;
+};
+
+template <typename T>
+class UpStream : public Stream<T> {
+  public:
+    UpStream() : Stream<T>(stream_direction::up) {}
+
+    void create() const override {}
+
+    void createUp() {
+        int totalSize = this->getTotalSize();
+        int chunkSize = this->getChunkSize();
+        for (int s = 0; s < stream_config::N * stream_config::N; s++) {
+            this->rawData_[s] = (T*)ebsp_create_up_stream(s, totalSize, chunkSize);
+        }
+    }
+
+    const std::array<T*, stream_config::processors>& getRawData() const {
+        return rawData_;
+    }
+
+  private:
+    std::array<T*, stream_config::processors> rawData_;
 };
 
 /* Stream definition for an n x n (TODO: rectangular) dense matrix.
@@ -80,9 +107,9 @@ class MatrixBlockStream : public Stream<T> {
     void create() const override {
         int totalSize = this->getTotalSize();
         int chunkSize = this->getChunkSize();
-        // bsp this and that for each processor and such
         for (int s = 0; s < stream_config::N * stream_config::N; s++) {
-            ebsp_create_down_stream(&(this->data_[s]), s, totalSize, chunkSize);
+            ebsp_create_down_stream((void*)this->data_[s].data(), s, totalSize,
+                                    chunkSize);
         }
     }
 
@@ -111,8 +138,6 @@ class MatrixBlockStream : public Stream<T> {
                 }
             }
         }
-
-        ZeeLogVar(this->data_[0]);
     }
 
     void setInner(int count, int size) {
@@ -126,8 +151,8 @@ class MatrixBlockStream : public Stream<T> {
     }
 
     int getInnerBlockSize() const { return innerBlockSize_; }
-
     int getOuterBlocks() const { return outerBlocks_; }
+    int getOuterBlockSize() const { return outerBlockSize_; }
 
     void setMatrixSize(int matrixSize) { matrixSize_ = matrixSize; }
 
@@ -139,26 +164,24 @@ class MatrixBlockStream : public Stream<T> {
 
         this->chunkSize_ = innerBlockSize_ * innerBlockSize_ * sizeof(T);
         this->totalSize_ = outerBlocks_ * outerBlocks_ * this->chunkSize_;
-
-        ZeeLogVar(this->chunkSize_);
-        ZeeLogVar(this->totalSize_);
     }
 
   private:
     void transposeStream_() {
-        int sizePerChunkRow = this->chunkSize_ * outerBlocks_;
         // row major blocks to column major
+        int chunkElements = this->innerBlockSize_ * this->innerBlockSize_;
         for (int s = 0; s < stream_config::N * stream_config::N; ++s) {
-            for (int chunkI = 1; chunkI < outerBlocks_; ++chunkI)
-            for (int chunkJ = 0; chunkJ < chunkI; ++chunkJ) {
-                int offset = chunkI * sizePerChunkRow + chunkJ * this->chunkSize_;
-                int targetOffset =
-                    chunkJ * sizePerChunkRow + chunkI * this->chunkSize_;
-                std::swap_ranges(this->data_[s].begin() + offset,
-                                 this->data_[s].begin() + offset +
-                                     this->chunkSize_,
-                                 this->data_[s].begin() + targetOffset);
-            }
+            for (int chunkI = 0; chunkI < outerBlocks_; ++chunkI)
+                for (int chunkJ = chunkI + 1; chunkJ < outerBlocks_; ++chunkJ) {
+                    int chunkOriginal = chunkI * outerBlocks_ + chunkJ;
+                    int chunkTarget = chunkJ * outerBlocks_ + chunkI;
+                    int offset = chunkOriginal * chunkElements;
+                    int targetOffset = chunkTarget * chunkElements;
+                    std::swap_ranges(this->data_[s].begin() + offset,
+                                     this->data_[s].begin() + offset +
+                                         chunkElements,
+                                     this->data_[s].begin() + targetOffset);
+                }
         }
     }
 
