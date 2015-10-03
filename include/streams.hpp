@@ -9,25 +9,29 @@ extern "C" {
 #include <vector>
 #include <algorithm>
 
+#ifndef ZEPHANY_MESH_SIZE
+#define ZEPHANY_MESH_SIZE 4
+#endif
+
 namespace Zephany {
 
 namespace stream_config {
-static constexpr int N = 4;
-static constexpr int processors = N * N;
+static constexpr unsigned int N = ZEPHANY_MESH_SIZE;
+static constexpr unsigned int processors = N * N;
 }
 
 enum class stream_direction { up, down };
 
-template <typename T>
+template <typename T, typename TIdx = Zee::default_index_type>
 class Stream {
   public:
     Stream(stream_direction direction) : direction_(direction) {}
 
-    void setChunkSize(int chunkSize) { chunkSize_ = chunkSize; }
-    void setTotalSize(int totalSize) { totalSize_ = totalSize; }
+    void setChunkSize(TIdx chunkSize) { chunkSize_ = chunkSize; }
+    void setTotalSize(TIdx totalSize) { totalSize_ = totalSize; }
 
-    int getChunkSize() const { return chunkSize_; }
-    int getTotalSize() const { return totalSize_; }
+    TIdx getChunkSize() const { return chunkSize_; }
+    TIdx getTotalSize() const { return totalSize_; }
 
     std::array<std::vector<T>, stream_config::processors>& getData() {
         return data_;
@@ -39,8 +43,8 @@ class Stream {
 
   protected:
     // these are per processor
-    int chunkSize_ = 0;
-    int totalSize_ = 0;
+    TIdx chunkSize_ = 0;
+    TIdx totalSize_ = 0;
 
     // we support upwards and downward streams
     stream_direction direction_ = stream_direction::down;
@@ -49,17 +53,21 @@ class Stream {
     bool initialized_ = false;
 };
 
-template <typename T>
-class UpStream : public Stream<T> {
+template <typename T, typename TIdx = Zee::default_index_type>
+class UpStream : public Stream<T, TIdx> {
   public:
-    UpStream() : Stream<T>(stream_direction::up) {}
+    UpStream() : Stream<T, TIdx>(stream_direction::up) {}
 
     void create() const override {}
 
     void createUp() {
-        int totalSize = this->getTotalSize();
-        int chunkSize = this->getChunkSize();
-        for (int s = 0; s < stream_config::N * stream_config::N; s++) {
+        ZeeAssert(this->chunkSize_ != 0);
+        ZeeAssert(this->totalSize_ != 0);
+
+        TIdx totalSize = this->getTotalSize();
+        TIdx chunkSize = this->getChunkSize();
+
+        for (TIdx s = 0; s < stream_config::processors; s++) {
             this->rawData_[s] = (T*)ebsp_create_up_stream(s, totalSize, chunkSize);
         }
     }
@@ -72,7 +80,7 @@ class UpStream : public Stream<T> {
     std::array<T*, stream_config::processors> rawData_;
 };
 
-/* Stream definition for an n x n (TODO: rectangular) dense matrix.
+/* Stream definition for an n x n dense matrix.
  * for a processor mesh of size N x N. The matrix is stored
  * in M x M 'outer blocks', and each outer block is split into
  * N x N smaller inner blocks.
@@ -89,10 +97,11 @@ class UpStream : public Stream<T> {
 // RHS orientation is column major
 enum class stream_orientation { left_handed, right_handed };
 
-template <typename T>
-class MatrixBlockStream : public Stream<T> {
+template <typename T, typename TIdx = Zee::default_index_type>
+class MatrixBlockStream : public Stream<T, TIdx> {
   public:
-    MatrixBlockStream(stream_direction direction) : Stream<T>(direction) {}
+    MatrixBlockStream(stream_direction direction)
+        : Stream<T, TIdx>(direction) {}
 
     /* Switch stream arrangement (for LHS/RHS of matrix operations) */
     void setOrientation(stream_orientation orientation) {
@@ -104,57 +113,76 @@ class MatrixBlockStream : public Stream<T> {
         orientation_ = orientation;
     }
 
-    void create() const override {
-        int totalSize = this->getTotalSize();
-        int chunkSize = this->getChunkSize();
-        for (int s = 0; s < stream_config::N * stream_config::N; s++) {
-            ebsp_create_down_stream((void*)this->data_[s].data(), s, totalSize,
-                                    chunkSize);
-        }
-    }
+    stream_orientation getOrientation() const { return orientation_; }
 
-    void feedElements(const std::vector<std::vector<T>>& data) {
-        ZeeAssert(this->chunkSize_ != 0);
-        ZeeAssert(this->totalSize_ != 0);
-
-        for (int s = 0; s < stream_config::processors; ++s) {
-            this->data_[s].reserve(this->totalSize_);
-        }
-
-        // This is always laid out left-handed (row major)
-        for (int blockI = 0; blockI < outerBlocks_; ++blockI)
-        for (int blockJ = 0; blockJ < outerBlocks_; ++blockJ) {
-            int blockOffsetI = blockI * outerBlockSize_;
-            int blockOffsetJ = blockJ * outerBlockSize_;
-            for (int s = 0; s < stream_config::N; ++s)
-            for (int t = 0; t < stream_config::N; ++t) {
-                int procOffsetI = s * innerBlockSize_;
-                int procOffsetJ = t * innerBlockSize_;
-                for (int i = 0; i < innerBlockSize_; ++i)
-                for (int j = 0; j < innerBlockSize_; ++j) {
-                    this->data_[s * stream_config::N + t].push_back(
-                        data[blockOffsetI + procOffsetI + i][blockOffsetJ +
-                                                             procOffsetJ + j]);
-                }
-            }
-        }
-    }
-
-    void setInner(int count, int size) {
+    void setInner(TIdx count, TIdx size) {
         innerBlocks_ = count;
         innerBlockSize_ = size;
     }
 
-    void setOuter(int count, int size) {
+    void setOuter(TIdx count, TIdx size) {
         outerBlocks_ = count;
         outerBlockSize_ = size;
     }
 
-    int getInnerBlockSize() const { return innerBlockSize_; }
-    int getOuterBlocks() const { return outerBlocks_; }
-    int getOuterBlockSize() const { return outerBlockSize_; }
+    TIdx getInnerBlockSize() const { return innerBlockSize_; }
+    TIdx getOuterBlocks() const { return outerBlocks_; }
+    TIdx getOuterBlockSize() const { return outerBlockSize_; }
 
-    void setMatrixSize(int matrixSize) { matrixSize_ = matrixSize; }
+    void setMatrixSize(TIdx matrixSize) { matrixSize_ = matrixSize; }
+
+    void reshape() {
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            this->data_[s].resize(outerBlocks_ * outerBlocks_ *
+                                  innerBlockSize_ * innerBlockSize_);
+        }
+    }
+
+    // Note: This is really show, and should not be used to loop over matrix
+    // we always optimize for size on Epiphany.
+    T& element(TIdx i, TIdx j) {
+        // see which global block:
+        TIdx outerBlockI = i / outerBlockSize_;
+        TIdx outerBlockJ = j / outerBlockSize_;
+
+        i -= outerBlockI * outerBlockSize_;
+        j -= outerBlockJ * outerBlockSize_;
+
+        // Get inner block
+        TIdx innerBlockI = i / innerBlockSize_;
+        TIdx innerBlockJ = j / innerBlockSize_;
+
+        i -= innerBlockI * innerBlockSize_;
+        j -= innerBlockJ * innerBlockSize_;
+
+        return this
+            ->data_[innerBlockI * innerBlocks_ +
+                    innerBlockJ][(outerBlockI * outerBlocks_ + outerBlockJ) *
+                                     innerBlockSize_ * innerBlockSize_ +
+                                 i * innerBlockSize_ + j];
+    }
+
+    const T& element(TIdx i, TIdx j) const {
+        // see which global block:
+        TIdx outerBlockI = i / outerBlockSize_;
+        TIdx outerBlockJ = j / outerBlockSize_;
+
+        i -= outerBlockI * outerBlockSize_;
+        j -= outerBlockJ * outerBlockSize_;
+
+        // Get inner block
+        TIdx innerBlockI = i / innerBlockSize_;
+        TIdx innerBlockJ = j / innerBlockSize_;
+
+        i -= innerBlockI * innerBlockSize_;
+        j -= innerBlockJ * innerBlockSize_;
+
+        return this
+            ->data_[innerBlockI * innerBlocks_ +
+                    innerBlockJ][(outerBlockI * outerBlocks_ + outerBlockJ) *
+                                     innerBlockSize_ * innerBlockSize_ +
+                                 i * innerBlockSize_ + j];
+    }
 
     void computeChunkSize() {
         ZeeAssert(innerBlocks_ != 0);
@@ -166,17 +194,29 @@ class MatrixBlockStream : public Stream<T> {
         this->totalSize_ = outerBlocks_ * outerBlocks_ * this->chunkSize_;
     }
 
+    void create() const override {
+        ZeeAssert(this->chunkSize_ != 0);
+        ZeeAssert(this->totalSize_ != 0);
+
+        TIdx totalSize = this->getTotalSize();
+        TIdx chunkSize = this->getChunkSize();
+        for (TIdx s = 0; s < stream_config::processors; s++) {
+            ebsp_create_down_stream((void*)(this->data_[s].data()), s, totalSize,
+                                    chunkSize);
+        }
+    }
+
   private:
     void transposeStream_() {
         // row major blocks to column major
-        int chunkElements = this->innerBlockSize_ * this->innerBlockSize_;
-        for (int s = 0; s < stream_config::N * stream_config::N; ++s) {
-            for (int chunkI = 0; chunkI < outerBlocks_; ++chunkI)
-                for (int chunkJ = chunkI + 1; chunkJ < outerBlocks_; ++chunkJ) {
-                    int chunkOriginal = chunkI * outerBlocks_ + chunkJ;
-                    int chunkTarget = chunkJ * outerBlocks_ + chunkI;
-                    int offset = chunkOriginal * chunkElements;
-                    int targetOffset = chunkTarget * chunkElements;
+        TIdx chunkElements = this->innerBlockSize_ * this->innerBlockSize_;
+        for (TIdx s = 0; s < stream_config::N * stream_config::N; ++s) {
+            for (TIdx chunkI = 0; chunkI < outerBlocks_; ++chunkI)
+                for (TIdx chunkJ = chunkI + 1; chunkJ < outerBlocks_; ++chunkJ) {
+                    TIdx chunkOriginal = chunkI * outerBlocks_ + chunkJ;
+                    TIdx chunkTarget = chunkJ * outerBlocks_ + chunkI;
+                    TIdx offset = chunkOriginal * chunkElements;
+                    TIdx targetOffset = chunkTarget * chunkElements;
                     std::swap_ranges(this->data_[s].begin() + offset,
                                      this->data_[s].begin() + offset +
                                          chunkElements,
@@ -186,11 +226,11 @@ class MatrixBlockStream : public Stream<T> {
     }
 
     stream_orientation orientation_ = stream_orientation::left_handed;
-    int innerBlocks_ = 0;
-    int innerBlockSize_ = 0;
-    int outerBlocks_ = 0;
-    int outerBlockSize_ = 0;
-    int matrixSize_ = 0;
+    TIdx innerBlocks_ = 0;
+    TIdx innerBlockSize_ = 0;
+    TIdx outerBlocks_ = 0;
+    TIdx outerBlockSize_ = 0;
+    TIdx matrixSize_ = 0;
 };
 
 } // namespace Zephany

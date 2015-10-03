@@ -6,126 +6,136 @@ namespace Zephany {
 
 using namespace Zee;
 
+#ifndef ZEPHANY_DEFAULT_INNER_SIZE
+#define ZEPHANY_DEFAULT_INNER_SIZE 32
+#endif
+
 template <typename TVal = default_scalar_type,
           typename TIdx = default_index_type>
 class DStreamingMatrix
     : public DDenseMatrixBase<DStreamingMatrix<TVal, TIdx>, TVal, TIdx> {
   public:
-    static constexpr int innerBlocks = stream_config::N;
-    static constexpr int innerBlockSize = 1;
-    static constexpr int outerBlockSize = innerBlocks * innerBlockSize;
-
     using Base = DDenseMatrixBase<DStreamingMatrix<TVal, TIdx>, TVal, TIdx>;
     using Base::operator=;
 
-    DStreamingMatrix(TIdx rows, TIdx cols)
-        : Base(rows, cols), stream_(stream_direction::down) {
-        resize(rows, cols);
+    DStreamingMatrix(TIdx size)
+        : DStreamingMatrix(ZEPHANY_DEFAULT_INNER_SIZE, size) {}
+
+    DStreamingMatrix(TIdx innerBlockSize, TIdx size)
+        : Base(size, size), stream_(stream_direction::down),
+          innerBlockSize_(innerBlockSize) {
+          ZeeAssertMsg(size >= innerBlockSize_ * innerBlocks_,
+                       "Streaming matrices have to be larger than MN x MN, "
+                       "where N is the dimension of the processor mesh and M "
+                       "is the inner block size.");
+
         initializeStream_();
     }
 
     explicit DStreamingMatrix(std::string file)
         : Base(0, 0), stream_(stream_direction::down) {
-        matrix_market::load(file, *this);
+
+        // TODO implement, maybe set inner blocks here already, prior to loading
+        ZeeAssert(false);
+
+        // FIXME deadlock: size not known, or stream not initialized
         initializeStream_();
+        matrix_market::load(file, *this);
     }
 
     explicit DStreamingMatrix(TIdx rows, TIdx cols,
                               const UpStream<TVal>& upStream)
         : Base(rows, cols), stream_(stream_direction::down) {
-        resize(rows, cols);
-        matrixFromUpStream_(upStream);
         initializeStream_();
+        matrixFromUpStream_(upStream);
     }
 
-    MatrixBlockStream<TVal>& getStream() { return stream_; }
-    const MatrixBlockStream<TVal>& getStream() const { return stream_; }
+    DStreamingMatrix(DStreamingMatrix& other) = default;
 
-    //--------------------------------------------------------------------------
-    // FIXME: this repeats DMatrix, do we actually want different storage here??
-    // maybe inherit from DMatrix after all
-    void resize(TIdx rows, TIdx cols) override {
-        Base::resize(rows, cols);
-
-        elements_.resize(rows);
-        for (auto& row : elements_) {
-            row.resize(cols);
-        }
-    }
+    MatrixBlockStream<TVal, TIdx>& getStream() { return stream_; }
+    const MatrixBlockStream<TVal, TIdx>& getStream() const { return stream_; }
 
     TVal& at(TIdx i, TIdx j) {
         ZeeAssert(i < this->rows_);
         ZeeAssert(j < this->cols_);
-        return elements_[i][j];
+
+        return stream_.element(i, j);
     }
 
     const TVal& at(TIdx i, TIdx j) const {
         ZeeAssert(i < this->rows_);
         ZeeAssert(j < this->cols_);
-        return elements_[i][j];
+
+        return stream_.element(i, j);
     }
 
-    //--------------------------------------------------------------------------
+    void setInnerBlockSize(TIdx innerBlockSize) {
+        innerBlockSize_ = innerBlockSize;
+        outerBlockSize_ = innerBlocks_ * innerBlockSize;
+        // FIXME: stream has to be reshaped
+    }
 
-    // TODO: Look into partial updates?
-    void updateStream() {
-        stream_.feedElements(elements_);
+    void fillWithUpStream(const UpStream<TVal>& stream) {
+        matrixFromUpStream_(stream);
     }
 
   private:
     void initializeStream_() {
-        const int outerBlocks = this->getRows() / outerBlockSize;
-        ZeeAssert(this->getRows() % outerBlockSize == 0);
+        // FIXME pad zeroes?
+        const TIdx outerBlocks =
+            (this->getRows() - 1) / outerBlockSize_ + 1;
 
-        stream_.setInner(innerBlocks, innerBlockSize);
-        stream_.setOuter(outerBlocks, outerBlockSize);
+        stream_.setInner(innerBlocks_, innerBlockSize_);
+        stream_.setOuter(outerBlocks, outerBlockSize_);
         stream_.setMatrixSize(this->getRows());
         stream_.computeChunkSize();
+        stream_.reshape();
     }
 
     void matrixFromUpStream_(const UpStream<TVal>& stream) {
-        const int outerBlocks = this->getRows() / outerBlockSize;
-        ZeeAssert(this->getRows() % outerBlockSize == 0);
+        const TIdx outerBlocks =
+            (this->getRows() - 1) / outerBlockSize_ + 1;
 
         auto data = stream.getRawData();
 
         // This is always laid out left-handed (row major)
-        for (int blockI = 0; blockI < outerBlocks; ++blockI)
-        for (int blockJ = 0; blockJ < outerBlocks; ++blockJ) {
-            int blockOffsetI = blockI * outerBlockSize;
-            int blockOffsetJ = blockJ * outerBlockSize;
-            for (int s = 0; s < stream_config::N; ++s)
-            for (int t = 0; t < stream_config::N; ++t) {
-                int procOffsetI = s * innerBlockSize;
-                int procOffsetJ = t * innerBlockSize;
-                for (int i = 0; i < innerBlockSize; ++i)
-                for (int j = 0; j < innerBlockSize; ++j) {
-                    elements_[blockOffsetI + procOffsetI + i][blockOffsetJ +
-                                                              procOffsetJ + j] =
+        for (TIdx blockI = 0; blockI < outerBlocks; ++blockI)
+        for (TIdx blockJ = 0; blockJ < outerBlocks; ++blockJ) {
+            TIdx blockOffsetI = blockI * outerBlockSize_;
+            TIdx blockOffsetJ = blockJ * outerBlockSize_;
+            for (TIdx s = 0; s < stream_config::N; ++s)
+            for (TIdx t = 0; t < stream_config::N; ++t) {
+                TIdx procOffsetI = s * innerBlockSize_;
+                TIdx procOffsetJ = t * innerBlockSize_;
+                for (TIdx i = 0; i < innerBlockSize_; ++i)
+                for (TIdx j = 0; j < innerBlockSize_; ++j) {
+                    // TODO: optimize this for speed.. this is ridiculous
+                    if (blockOffsetI + procOffsetI + i >= this->rows_ ||
+                        blockOffsetJ + procOffsetJ + j >= this->cols_)
+                        break;
+
+                    this->at(blockOffsetI + procOffsetI + i,
+                             blockOffsetJ + procOffsetJ + j) =
                         data[s * stream_config::N +
                              t][(blockI * outerBlocks + blockJ) *
-                                    (innerBlockSize * innerBlockSize) +
-                                i * innerBlockSize + j];
-//                    ZeeLogInfo
-//                        << "C[" << blockOffsetI + procOffsetI + i << ", "
-//                        << blockOffsetJ + procOffsetJ + j << "] = "
-//                        << data[s * stream_config::N +
-//                                t][(blockI * outerBlocks + blockJ) *
-//                                       (innerBlockSize * innerBlockSize) +
-//                                   i * innerBlockSize + j] << endLog;
+                                    (innerBlockSize_ * innerBlockSize_) +
+                                i * innerBlockSize_ + j];
                 }
             }
         }
     }
 
-    // stored column major
-    std::vector<std::vector<TVal>> elements_;
-    MatrixBlockStream<TVal> stream_;
+    // this should only be the stream
+    MatrixBlockStream<TVal, TIdx> stream_;
+
+    TIdx innerBlocks_ = stream_config::N;
+    TIdx innerBlockSize_ = ZEPHANY_DEFAULT_INNER_SIZE;
+    TIdx outerBlockSize_ = innerBlocks_ * innerBlockSize_;
 };
 
 // We add an operator such that we can log dense matrices
 template <typename TVal, typename TIdx>
-Zee::Logger& operator <<(Logger& lhs, const DStreamingMatrix<TVal, TIdx>& rhs) {
+Logger& operator<<(Logger& lhs, const DStreamingMatrix<TVal, TIdx>& rhs) {
     lhs << "\n";
     for (TIdx i = 0; i < rhs.getRows(); ++i) {
         lhs << "|";

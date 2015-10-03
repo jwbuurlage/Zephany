@@ -28,11 +28,11 @@ E_LIB_NAMES = -le-bsp -le-lib
 TEST_SOURCES = test/catch.cpp test/streams.cpp
 
 # Prerequisites
-all: dirs examples kernels tests
+all: dirs examples kernels
 
 kernels: bin/kernels/k_hello_world.srec bin/kernels/k_spmv.srec bin/kernels/k_cannon.srec
 
-examples: streaming_lial hello_ebsp
+examples: dense sparse hello_ebsp
 
 dirs:
 	@mkdir -p ${OUTPUT_DIR}
@@ -48,7 +48,11 @@ hello_ebsp: examples/ebsp_example.cpp kernels/k_hello_world.c
 	@echo 'CC $@'
 	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 
-streaming_lial: examples/streaming_lial.cpp kernels/k_spmv.c
+dense: examples/dense.cpp kernels/k_cannon.c
+	@echo 'CC $@'
+	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
+
+sparse: examples/sparse.cpp kernels/k_spmv.c
 	@echo 'CC $@'
 	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 

@@ -2,10 +2,8 @@
 #include <stdint.h>
 #include "common.h"
 
-void get_initial_data(void* A, void* B);
 void get_parameters(int* inner_block_size, int* outer_blocks, int* N);
 void matrix_multiply_add(float* A, float* B, float* C, int inner_block_size);
-void ebsp_set_head(int, int);
 
 int main() {
     bsp_begin();
@@ -16,9 +14,6 @@ int main() {
     int N = 0;
     get_parameters(&inner_block_size, &outer_blocks, &N);
     int inner_block_bytes = inner_block_size * inner_block_size * sizeof(float);
-
-    ebsp_message("Params: %i %i %i %i", inner_block_size, outer_blocks, N,
-                 inner_block_bytes);
 
     // Compute mesh position of this processor
     int s = bsp_pid();
@@ -32,7 +27,6 @@ int main() {
     // We define 5 buffers to hold the matrix blocks
     float* a_data[2];
     float* b_data[2];
-    // FIXME = 0
     float* c_data = 0;
 
     // Whether we want to use double-buffering for C
@@ -48,6 +42,8 @@ int main() {
 
     // Set C to zero
     for (int i = 0; i < inner_block_size * inner_block_size; ++i) {
+        a_data[1][i] = -1;
+        b_data[1][i] = -1;
         c_data[i] = 0;
     }
 
@@ -75,13 +71,9 @@ int main() {
     ebsp_dma_handle dma_handle_a;
     ebsp_dma_handle dma_handle_b;
 
-    // Make sure the host is awake. FIXME temporary
-    ebsp_host_sync();
-    ebsp_barrier();
-
     // Loop over the outer blocks (chunks)
     int total_block_count = outer_blocks * outer_blocks * outer_blocks;
-    for (int cur_block = 0; cur_block <= total_block_count; cur_block++) {
+    for (int cur_block = 0; cur_block <= total_block_count; ++cur_block) {
         // See if we have something to send up
         if (cur_block != 0) {
             if (cur_block % (outer_blocks * outer_blocks) == 0) {
@@ -93,13 +85,7 @@ int main() {
             }
             if (cur_block % outer_blocks == 0) {
                 // Send result of C upwards
-                // FIXME THIS SHOULD GIVE ERROR IF 2 DOES NOT EXIST
                 ebsp_move_chunk_up((void*)&c_data, 2, fastmode);
-                //ebsp_message("%i (%i, %i, %i, ..., %i)",
-                //     cur_block, (int)c_data[0],
-                //     (int)c_data[1],
-                //     (int)c_data[2],
-                //     (int)c_data[inner_block_size * inner_block_size - 1]);
                 ebsp_barrier();
 
                 // FIXME find more elegant way of accomplishing this.
@@ -120,12 +106,6 @@ int main() {
         ebsp_move_chunk_down((void**)&b_data[0], // address
                              1,                  // stream id
                              0);                 // double buffered mode
-
-//        ebsp_message("a: %i (%i, %i, %i, ..., %i)",
-//             cur_block, (int)a_data[0][0],
-//             (int)a_data[0][1],
-//             (int)a_data[0][2],
-//             (int)a_data[0][inner_block_size * inner_block_size - 1]);
 
         // Define indices into our buffers
         int cur = 0;        // computation
