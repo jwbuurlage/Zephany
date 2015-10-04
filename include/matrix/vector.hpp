@@ -2,8 +2,6 @@ namespace Zephany {
 
 using namespace Zee;
 
-
-/*** VECTOR ***/
 template <typename TVal = default_scalar_type,
          typename TIdx = default_index_type>
 class DStreamingVector

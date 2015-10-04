@@ -1,6 +1,6 @@
 #include <zee.hpp>
 
-#include "streams.hpp"
+#include "../streams.hpp"
 
 namespace Zephany {
 

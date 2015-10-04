@@ -12,7 +12,7 @@ as published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
 */
 
-#include "dense.hpp"
-#include "sparse.hpp"
-#include "vector.hpp"
+#include "matrix/dense.hpp"
+#include "matrix/sparse.hpp"
+#include "matrix/vector.hpp"
 #include "operations.hpp"
