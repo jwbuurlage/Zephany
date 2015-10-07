@@ -2,7 +2,7 @@ extern "C" {
 #include <host_bsp.h>
 }
 
-#include "streams.hpp"
+#include "streams/streams.hpp"
 
 namespace Zephany {
 

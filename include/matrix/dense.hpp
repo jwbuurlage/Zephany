@@ -1,6 +1,9 @@
+#pragma once
+
 #include <zee.hpp>
 
-#include "../streams.hpp"
+#include "../streams/streams.hpp"
+#include "../streams/matrix_block.hpp"
 
 namespace Zephany {
 
