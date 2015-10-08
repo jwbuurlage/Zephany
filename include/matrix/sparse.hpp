@@ -20,6 +20,10 @@ class DStreamingSparseMatrix
         ZeeAssert(this->getRows() > stream_.windowDimension &&
                   this->getCols() > stream_.windowDimension);
 
+        ZeeLogVar(this->getRows());
+        ZeeLogVar(this->getCols());
+        ZeeLogVar(this->nonZeros());
+
         // should create the stream for A
         // modify the stream by filling it with strips and windows
         // need local variables and *vector distribution*
@@ -30,6 +34,9 @@ class DStreamingSparseMatrix
         // 'block distribution'
         constexpr int stripSize = stream_.windowDimension;    // strip size in columns
         constexpr int windowHeight = stream_.windowDimension; // windowHeight in rows
+
+        int strips = (this->getCols() - 1) / stripSize + 1;
+        int windows = (this->getRows() - 1) / windowHeight + 1;
 
         // first scan: get and set:
         // > global headers:
@@ -50,19 +57,18 @@ class DStreamingSparseMatrix
         WindowInfo numNonLocalInput;
         // ...
 
+        TIdx s = 0;
         for (auto image : this->getImages()) {
             for (auto triplet : *image) {
-                // we dont want a partitioned matrix here, just loop over
-                // triplets
-                // FIXME: look at matrix market, possibly generalize
-                // triplet.row(), triplet.col(), triplet.value()
-                //
                 // compute block number of triplet
                 auto strip = triplet.col() / stripSize;
-                auto windowInStrip = triplet.row() / windowHeight;
-                // compute target processor
+                auto window = triplet.row() / windowHeight;
+
                 // update arrays
+                localWindowSize[s][strip * windows + window]++;
+                // FIXME after vector distribution..
             }
+            ++s;
         }
 
         std::array<TIdx, stream_config::processors> maxOutputSize;
