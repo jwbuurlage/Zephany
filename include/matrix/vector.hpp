@@ -12,17 +12,21 @@ class DStreamingVector
         using Base::operator=;
 
         DStreamingVector(TIdx size, TVal defaultValue = 0.0)
-            : Base(size, defaultValue), owners_(size)
+            : Base(size, defaultValue), owners_(size), elements_(size, defaultValue)
         { }
 
+        // FIXME copied code again
         void reassign(TIdx element, TIdx processor) override {
             owners_[element] = processor;
         }
 
         const std::vector<TIdx>& getOwners() const { return owners_; }
 
+        TVal operator[](TIdx i) const { return elements_[i]; }
+
     private:
         std::vector<TIdx> owners_;
+        std::vector<TVal> elements_;
 };
 
 } // namespace zephany

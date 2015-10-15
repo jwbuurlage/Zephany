@@ -17,25 +17,23 @@ int main() {
     std::string matrix = "steam3";
 
     auto S = DStreamingSparseMatrix<TVal, TIdx>(
-        "/home/jw/zephany/data/matrices/" + matrix + ".mtx", 4);
+        "/home/jw/zephany/data/matrices/" + matrix + ".mtx",
+        stream_config::processors);
     DStreamingVector<TVal, TIdx> x(S.getCols(), 1.0);
     DStreamingVector<TVal, TIdx> y(S.getRows(), 1.0);
 
-    ZeeLogVar(S.getCols());
-    ZeeLogVar(S.getRows());
+    //Zee::MGPartitioner<decltype(S)> matrixPartitioner;
+    //matrixPartitioner.partition(S);
 
-    Zee::MGPartitioner<decltype(S)> matrixPartitioner;
-    matrixPartitioner.partition(S);
-
-    GreedyVectorPartitioner<decltype(S), decltype(x)> vectorPartitioner(S, x, y);
+    GreedyVectorPartitioner<decltype(S), decltype(x)> vectorPartitioner(S, x,
+                                                                        y);
     vectorPartitioner.partition();
 
     // create a strip / window "view"
     SparseStream<decltype(S), decltype(x)> sparseStream(S, x, 50, 50);
 
     sparseStream.prepareStream();
-//
-//    y = S * x;
+    // y = S * x;
 
     return 0;
 }
