@@ -15,16 +15,27 @@ int main() {
     // SPARSE
     // We initialize the matrix with cyclic distribution
     std::string matrix = "steam3";
+
     auto S = DStreamingSparseMatrix<TVal, TIdx>(
         "/home/jw/zephany/data/matrices/" + matrix + ".mtx", 4);
     DStreamingVector<TVal, TIdx> x(S.getCols(), 1.0);
     DStreamingVector<TVal, TIdx> y(S.getRows(), 1.0);
 
-    Zee::MGPartitioner<decltype(S)> partitioner;
-    partitioner.partition(S);
-    S.prepareStream();
+    ZeeLogVar(S.getCols());
+    ZeeLogVar(S.getRows());
 
-    y = S * x;
+    Zee::MGPartitioner<decltype(S)> matrixPartitioner;
+    matrixPartitioner.partition(S);
+
+    GreedyVectorPartitioner<decltype(S), decltype(x)> vectorPartitioner(S, x, y);
+    vectorPartitioner.partition();
+
+    // create a strip / window "view"
+    SparseStream<decltype(S), decltype(x)> sparseStream(S, x, 50, 50);
+
+    sparseStream.prepareStream();
+//
+//    y = S * x;
 
     return 0;
 }
