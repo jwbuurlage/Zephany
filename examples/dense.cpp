@@ -14,7 +14,7 @@ int main() {
     ZeeLogInfo << "-- Starting dense example" << endLog;
 
     // DENSE
-    int n = 200;
+    int n = 256;
 
     DStreamingMatrix<TVal, TIdx> A(n);
     DStreamingMatrix<TVal, TIdx> B(n);

@@ -1,6 +1,5 @@
 #include <e_bsp.h>
 #include <stdint.h>
-#include "common.h"
 
 void get_parameters(int* inner_block_size, int* outer_blocks, int* N);
 void matrix_multiply_add(float* A, float* B, float* C, int inner_block_size);
@@ -42,9 +41,9 @@ int main() {
 
     // Set C to zero
     for (int i = 0; i < inner_block_size * inner_block_size; ++i) {
-        a_data[1][i] = -1;
-        b_data[1][i] = -1;
-        c_data[i] = 0;
+        a_data[1][i] = -1.0f;
+        b_data[1][i] = -1.0f;
+        c_data[i] = 0.0f;
     }
 
     // Register the locations of our buffers
@@ -62,10 +61,10 @@ int main() {
     float* neighbor_b_data[2];
 
     // Obtain neighbor locations
-    neighbor_a_data[0] = ebsp_get_raw_address(a_neighbor, a_data[0]);
-    neighbor_a_data[1] = ebsp_get_raw_address(a_neighbor, a_data[1]);
-    neighbor_b_data[0] = ebsp_get_raw_address(b_neighbor, b_data[0]);
-    neighbor_b_data[1] = ebsp_get_raw_address(b_neighbor, b_data[1]);
+    neighbor_a_data[0] = ebsp_get_direct_address(a_neighbor, a_data[0]);
+    neighbor_a_data[1] = ebsp_get_direct_address(a_neighbor, a_data[1]);
+    neighbor_b_data[0] = ebsp_get_direct_address(b_neighbor, b_data[0]);
+    neighbor_b_data[1] = ebsp_get_direct_address(b_neighbor, b_data[1]);
 
     // We use the DMA manually to send the inner matrix blocks to our neighbours
     ebsp_dma_handle dma_handle_a;
@@ -77,10 +76,11 @@ int main() {
         // See if we have something to send up
         if (cur_block != 0) {
             if (cur_block % (outer_blocks * outer_blocks) == 0) {
-                ebsp_move_down_cursor(1,         // stream id
-                                      -(outer_blocks * outer_blocks)); // relative chunk count
+                ebsp_move_down_cursor(
+                    1,                               // stream id
+                    -(outer_blocks * outer_blocks)); // relative chunk count
             } else if (cur_block % outer_blocks == 0) {
-                ebsp_move_down_cursor(0,   // stream id
+                ebsp_move_down_cursor(0,              // stream id
                                       -outer_blocks); // relative chunk count
             }
             if (cur_block % outer_blocks == 0) {
@@ -121,7 +121,8 @@ int main() {
             }
 
             // Perform C += A * B
-            matrix_multiply_add(a_data[cur], b_data[cur], c_data, inner_block_size);
+            matrix_multiply_add(a_data[cur], b_data[cur], c_data,
+                                inner_block_size);
 
             if (i == N - 1)
                 break;

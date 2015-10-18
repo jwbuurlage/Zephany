@@ -39,22 +39,22 @@ dirs:
 	@mkdir -p ${OUTPUT_DIR}/kernels
 
 ebsp:
-	@cd ext/epiphany-bsp/ && make
+	@cd ext/epiphany-bsp/ && make clean && make
 
 matrices: examples/matrices.cpp
 	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DEPS}
 
 hello_ebsp: examples/ebsp_example.cpp kernels/k_hello_world.c
 	@echo 'CC $@'
-	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
+	@${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 
 dense: examples/dense.cpp kernels/k_cannon.c
 	@echo 'CC $@'
-	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
+	@${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 
 sparse: examples/sparse.cpp kernels/k_spmv.c
 	@echo 'CC $@'
-	${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
+	@${CCPP} ${CCPP_FLAGS} ${INCLUDE_DIRS} -o ${OUTPUT_DIR}/$@ $< ${LIB_DIRS} ${LIB_DEPS} ${LIB_EBSP}
 
 # Kernels
 bin/kernels/%.srec: bin/kernels/%.elf

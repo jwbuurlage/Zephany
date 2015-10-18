@@ -29,6 +29,8 @@ class SparseStream
 
         ZeeAssert(A_.getProcs() == stream_config::processors);
 
+        // TODO: "windows" and "strips" should be constructed in some
+        // partitioner, stored in matrix itself?
         TIdx strips = (A_.getCols() - 1) / stripSize_ + 1;
         TIdx windows = (A_.getRows() - 1) / windowSize_ + 1;
 
@@ -62,8 +64,10 @@ class SparseStream
             ++s;
         }
 
-        std::array<std::vector<std::vector<TVal>>, stream_config::processors> stripValuesV;
-        std::array<std::vector<std::vector<TIdx>>, stream_config::processors> stripIndicesV;
+        std::array<std::vector<std::vector<TVal>>, stream_config::processors>
+            stripValuesV;
+        std::array<std::vector<std::vector<TIdx>>, stream_config::processors>
+            stripIndicesV;
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             stripValuesV[s].resize(strips);
@@ -97,15 +101,45 @@ class SparseStream
                 TIdx sizeV = windowColset[s][windowIdx].size();
                 TIdx sizeU = windowRowset[s][windowIdx].size();
                 TIdx sizeWindow = windowTriplets[s][windowIdx].size();
-                TIdx nonLocal = 0; // FIXME
+                TIdx nonLocal =
+                    stripIndicesV[s][windowIdx / windows].size() - sizeV;
                 if (sizeV > maxSizeV[s])
                     maxSizeV[s] = sizeV;
                 if (sizeU > maxSizeU[s])
                     maxSizeU[s] = sizeU;
                 if (sizeWindow > maxSizeWindow[s])
                     maxSizeWindow[s] = sizeWindow;
+                if (nonLocal > maxNonLocal[s])
+                    maxNonLocal[s] = nonLocal;
             }
         }
+
+        localToGlobalU_.resize(strips * windows);
+
+        // localize strip indices
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            for (TIdx strip = 0; strip < strips; ++strips) {
+                // better to do this in one run.. here we localize the strip
+                // indices using a local map
+                std::map<TIdx, TIdx> stripLocalIndices;
+                for (TIdx i = 0; i < stripIndicesV[s][strip].size(); ++i) {
+                    stripLocalIndices[stripIndicesV[s][strip][i]] = i;
+                }
+
+                // now we have local indices for the stripSize, and we loop over
+                // windows
+                for (TIdx window = 0; window < windows; ++window) {
+                    // we find the global -> local u indices (and should store them)
+                    // storing them is ~10% of matrix size, which is huge
+                }
+            }
+        }
+
+        // localize window indices
+        // NOTE: store mapping for u for every proc, otherwise we cannot gather
+
+        // fill the streams
+        ZeeLogDebug << "Finished constructing stream" << endLog;
     }
 
   private:
@@ -114,6 +148,8 @@ class SparseStream
 
     TIdx stripSize_;
     TIdx windowSize_;
+
+    std::vector<std::vector<TIdx>> localToGlobalU_;
 };
 
 } // namespace Zephany
