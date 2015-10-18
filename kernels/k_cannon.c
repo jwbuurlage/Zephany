@@ -46,6 +46,7 @@ int main() {
         c_data[i] = 0.0f;
     }
 
+
     // Register the locations of our buffers
     bsp_push_reg(a_data[0], inner_block_bytes);
     bsp_sync();
