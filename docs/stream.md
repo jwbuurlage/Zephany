@@ -19,28 +19,28 @@ is fast.
 
 ..........................................................
 
-### global header
-maxSizeU         int
-maxSizeV         int
-maxSizeWindow    int
-maxNonLocal      int
-numStrips        int
+### chunk: global header
+maxSizeU         `uint32_t`
+maxSizeV         `uint32_t`
+maxSizeWindow    `uint32_t`
+maxNonLocal      `uint32_t`
+numStrips        `uint32_t`
 
 (repeat numStrips times):
-### strip header
-numWindows       int
-numLocalV        int
-v                int[numLocalV]
+### chunk: strip header
+numWindows       `uint32_t`
+numLocalV        `uint32_t`
+v                `uint32_t[numLocalV]`
 
 (repeat numWindows times):
-### window
-numNonLocal      int
-nonLocalOwners   int[numNonLocal]
-nonLocalIdxs     int[numNonLocal]
-windowSize       int
-tripletRows      int[windowSize]
-tripletCols      int[windowSize]
-tripletVals      float[windowSize]
+### chunk: window
+numNonLocal      `uint32_t`
+nonLocalOwners   `uint32_t[numNonLocal]`
+nonLocalIdxs     `uint32_t[numNonLocal]`
+windowSize       `uint32_t`
+tripletRows      `uint32_t[windowSize]`
+tripletCols      `uint32_t[windowSize]`
+tripletVals      `float[windowSize]`
 
 ..........................................................
 

@@ -1,8 +1,91 @@
 #pragma once
 
 #include "streams.hpp"
+#include "stdint.h"
 
 namespace Zephany {
+
+template <typename TIdx>
+struct SparseStreamHeader {
+    TIdx maxSizeU;
+    TIdx maxSizeV;
+    TIdx maxWindowSize;
+    TIdx maxSizeLocal;
+    TIdx numStrips;
+
+    void write(void** address) const {
+        // I think struct is guarenteed to be C-compatible such that
+        // we could just copy *this here.
+        TIdx* ptr = (TIdx*)*address;
+        ptr[0] = maxSizeU;
+        ptr[1] = maxSizeV;
+        ptr[2] = maxWindowSize;
+        ptr[3] = maxSizeLocal;
+        ptr[4] = numStrips;
+        address += this->sizeInBytes();
+    }
+
+    constexpr unsigned int sizeInBytes() const { return sizeof(TIdx) * 5; }
+};
+
+template <typename TVal, typename TIdx>
+struct SparseStreamStripHeader {
+    TIdx numWindows;
+    std::vector<TVal> v;
+
+    void write(void** address) const {
+        // write to address and add to address pointer
+        TIdx* ptr = (TIdx*)*address;
+        TIdx i = 0;
+        ptr[i++] = numWindows;
+        ptr[i++] = (TIdx)v.size();
+        TVal* valPtr = (TVal*)&ptr[i];
+        i = 0;
+        for (auto val : v) {
+            valPtr[i++] = val;
+        }
+        address += this->sizeInBytes();
+    }
+
+    unsigned int sizeInBytes() const {
+        return sizeof(TIdx) * 2 + sizeof(TVal) * v.size();
+    }
+};
+
+template <typename TVal, typename TIdx>
+struct SparseStreamWindow {
+    std::vector<TIdx> nonLocalOwners;
+    std::vector<TIdx> nonLocalIndices;
+
+    std::vector<Triplet> triplets;
+
+    void write(void** address) const {
+        // write to address and add to address pointer
+        TIdx* ptr = (TIdx*)*address;
+        TIdx i = 0;
+        ptr[i++] = (TIdx)nonLocalOwners.size();
+        for (auto owner : nonLocalOwners)
+            ptr[i++] = val;
+        for (auto indices : nonLocalIndices)
+            ptr[i++] = indices;
+        ptr[i++] = (TIdx)triplets.size();
+        for (auto& triplet : triplets)
+            ptr[i++] = triplet.row();
+        for (auto& triplet : triplets)
+            ptr[i++] = triplet.col();
+        TVal* valPtr = (TVal*)&ptr[i];
+        i = 0;
+        for (auto& triplet : triplets)
+            valPtr[i++] = triplet.value();
+        address += this->sizeInBytes();
+    }
+
+    unsigned int sizeInBytes() const {
+        return sizeof(TIdx) *
+                   (2 * triplets.size() + 2 * nonLocalOwners.size()) +
+               sizeof(TVal) * triplets.size();
+    }
+};
 
 template <typename TMatrix, typename TVector>
 class SparseStream
@@ -14,6 +97,12 @@ class SparseStream
     SparseStream(TMatrix& A, TVector& v, TIdx stripSize, TIdx windowSize)
         : Stream<TVal, TIdx>(stream_direction::down), A_(A), v_(v),
           stripSize_(stripSize), windowSize_(windowSize) {}
+
+    ~SparseStream() {
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            operator delete sparseData_[s];
+        }
+    }
 
     void create() const override {
         // TODO implement
@@ -27,6 +116,8 @@ class SparseStream
         ZeeLogVar(A_.getCols());
         ZeeLogVar(A_.nonZeros());
 
+        ZeeAssert(sizeof(TIdx) == sizeof(uint32_t));
+
         ZeeAssert(A_.getProcs() == stream_config::processors);
 
         // TODO: "windows" and "strips" should be constructed in some
@@ -34,8 +125,8 @@ class SparseStream
         TIdx strips = (A_.getCols() - 1) / stripSize_ + 1;
         TIdx windows = (A_.getRows() - 1) / windowSize_ + 1;
 
-        std::array<std::vector<std::vector<Triplet<TVal, TIdx>>>,
-                   stream_config::processors> windowTriplets;
+        std::array<std::vector<SparseStreamWindow>,
+                   stream_config::processors> windowChunks;
 
         std::array<std::vector<std::set<TIdx>>, stream_config::processors>
             windowRowset;
@@ -44,7 +135,7 @@ class SparseStream
             windowColset;
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            windowTriplets[s].resize(strips * windows);
+            windowChunks[s].resize(strips * windows);
             windowRowset[s].resize(strips * windows);
             windowColset[s].resize(strips * windows);
         }
@@ -57,21 +148,20 @@ class SparseStream
                 auto window = triplet.row() / windowSize_;
                 auto windowIdx = strip * windows + window;
 
-                windowTriplets[s][windowIdx].push_back(triplet);
+                windowChunks[s][windowIdx].triplets.push_back(triplet);
                 windowRowset[s][windowIdx].insert(triplet.row());
                 windowColset[s][windowIdx].insert(triplet.col());
             }
             ++s;
         }
 
-        std::array<std::vector<std::vector<TVal>>, stream_config::processors>
-            stripValuesV;
-        std::array<std::vector<std::vector<TIdx>>, stream_config::processors>
-            stripIndicesV;
+        std::array<std::vector<SparseStreamStripHeader>,
+                   stream_config::processors> stripHeaders;
+        std::array<std::vector<TIdx>, stream_config::processors> stripIndicesV;
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            stripValuesV[s].resize(strips);
-            stripIndicesV[s].resize(strips);
+            stripHeaders[s].v.resize(strips);
+            stripHeaders[s].numWindows = windows;
         }
 
         auto& owners = v_.getOwners();
@@ -83,38 +173,41 @@ class SparseStream
             for (TIdx column = strip * stripSize_;
                  column < A_.getCols() && column < (strip + 1) * stripSize_;
                  ++column) {
-                stripValuesV[owners[column]][strip].push_back(v_[column]);
+                stripHeaders[owners[column]][strip].v.push_back(v_[column]);
                 stripIndicesV[owners[column]][strip].push_back(column);
             }
         }
 
         // now we have a list of windows and strips
         // we now need:
-        using WindowInfo = std::array<TIdx, stream_config::processors>;
-        WindowInfo maxSizeU;
-        WindowInfo maxSizeV;
-        WindowInfo maxSizeWindow;
-        WindowInfo maxNonLocal;
+        std::array<TIdx, stream_config::processors> headers;
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             for (TIdx windowIdx = 0; windowIdx < strips * windows;
                  ++windowIdx) {
                 TIdx sizeV = windowColset[s][windowIdx].size();
                 TIdx sizeU = windowRowset[s][windowIdx].size();
-                TIdx sizeWindow = windowTriplets[s][windowIdx].size();
+                TIdx sizeWindow = windowChunks[s][windowIdx].triplets.size();
                 TIdx nonLocal =
                     stripIndicesV[s][windowIdx / windows].size() - sizeV;
-                if (sizeV > maxSizeV[s])
-                    maxSizeV[s] = sizeV;
-                if (sizeU > maxSizeU[s])
-                    maxSizeU[s] = sizeU;
-                if (sizeWindow > maxSizeWindow[s])
-                    maxSizeWindow[s] = sizeWindow;
-                if (nonLocal > maxNonLocal[s])
-                    maxNonLocal[s] = nonLocal;
+
+                // TODO TODO TODO WHICH INDICES
+                windowChunks[s][windowIdx].nonLocalOwners.resize() = nonLocal;
+                windowChunks[s][windowIdx].nonLocalIndices.resize() = nonLocal;
+
+                if (sizeV > headers[s].maxSizeV)
+                    headers[s].maxSizeV = sizeV;
+                if (sizeU > headers[s].maxSizeU)
+                    headers[s].maxSizeU = sizeU;
+                if (sizeWindow > headers[s].maxWindowSize)
+                    headers[s].maxWindowSize = sizeWindow;
+                if (nonLocal > headers[s].maxNonLocal)
+                    headers[s].maxNonLocal = nonLocal;
             }
         }
 
-        localToGlobalU_.resize(strips * windows);
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            localToGlobalU_[s].resize(strips * windows);
+        }
 
         // localize strip indices
         for (TIdx s = 0; s < stream_config::processors; ++s) {
@@ -126,19 +219,59 @@ class SparseStream
                     stripLocalIndices[stripIndicesV[s][strip][i]] = i;
                 }
 
-                // now we have local indices for the stripSize, and we loop over
-                // windows
                 for (TIdx window = 0; window < windows; ++window) {
-                    // we find the global -> local u indices (and should store them)
-                    // storing them is ~10% of matrix size, which is huge
+                    std::map<TIdx, TIdx> windowLocalIndices;
+                    auto windowIdx = strip * windows + window;
+
+                    // NOTE: store mapping for u for every proc, otherwise we
+                    // cannot gather
+                    localToGlobalU_[s][windowIdx].resize(
+                        windowRowset.size());
+                    TIdx localIdx = 0;
+                    for (auto row : windowRowset) {
+                        // localize U
+                        windowLocalIndices[row] = localIdx;
+                        localToGlobalU_[s][windowIdx][localIdx] =
+                            row;
+                        localIdx++;
+                    }
+
+                    // localize window indices
+                    for (auto& triplet :
+                         windowChunks[s][windowIdx].triplets) {
+                        triplet.setCol(stripLocalIndices[chunk.col()]);
+                        triplet.setRow(windowLocalIndices[triplet.row()]);
+                    }
                 }
             }
         }
 
-        // localize window indices
-        // NOTE: store mapping for u for every proc, otherwise we cannot gather
+        std::array<TIdx, stream_config::processors> streamSize;
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            streamSize[s] += headers[s].sizeInBytes();
+            for (TIdx strip = 0; strip < strips; ++strip) {
+                streamSize[s] += stripHeaders[s][strip].sizeInBytes();
+                for (TIdx window = 0; window < windows; ++window) {
+                    TIdx windowIdx = strip * windows + window;
+                    streamSize[s] += windowChunks[s][windowIdx].sizeInBytes();
+                }
+            }
 
-        // fill the streams
+            sparseData_[s] = operator new(streamSize[s]);
+
+            headers[s].write(&sparseData_[s]);
+            for (TIdx strip = 0; strip < strips; ++strip) {
+                stripHeaders[s][strip].write(&sparseData_[s]);
+                for (TIdx window = 0; window < windows; ++window) {
+                    TIdx windowIdx = strip * windows + window;
+                    windowChunks[s][windowIdx].write(&sparseData_[s]);
+                }
+            }
+        }
+
+        // TODO TODO TODO: STATUS: besides local indices all the code is in
+        // place, still need a way to structurally check this code
+
         ZeeLogDebug << "Finished constructing stream" << endLog;
     }
 
@@ -149,7 +282,10 @@ class SparseStream
     TIdx stripSize_;
     TIdx windowSize_;
 
-    std::vector<std::vector<TIdx>> localToGlobalU_;
+    std::array<std::vector<std::vector<TIdx>>, stream_config::processors>
+        localToGlobalU_;
+
+    std::array<void*, stream_config::processors> sparseData_;
 };
 
 } // namespace Zephany
