@@ -1,5 +1,14 @@
 #pragma once
 
+// TODO:
+// [ ] 'raw' stream with variable chunk sizeInBytes
+//   [ ] include header sizes
+//   [ ] write header sizes
+//   [ ] check create_down_stream_raw
+// [ ] check if indices get constructed correctly
+// [ ] gather partial results of u_j with correct indices
+// [ ] to avoid copies maybe we move v into a separate stream
+
 #include "streams.hpp"
 #include "stdint.h"
 
@@ -105,8 +114,11 @@ class SparseStream
     }
 
     void create() const override {
-        // TODO implement
-        ZeeLogDebug << "SparseStream::create() not implemented" << endLog;
+        for (TIdx s = 0; s < stream_config::processors; s++) {
+            ebsp_create_down_stream_raw((void*)(this->sparseData_[s].data()), s,
+                    /* FIXME */, // total size
+                    /* FIXME */); // max chunk size (needed?)
+        }
     }
 
     void prepareStream() {
@@ -226,7 +238,7 @@ class SparseStream
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             for (TIdx strip = 0; strip < strips; ++strips) {
                 for (TIdx window = 0; window < windows; ++window) {
-                    std::map<TIdx, TIdx> windowLocalIndices;
+                    std::map<TIdx, TIdx> windowLocalIndicesU;
                     auto windowIdx = strip * windows + window;
 
                     // NOTE: store mapping for u for every proc, otherwise we
@@ -236,18 +248,31 @@ class SparseStream
                     TIdx localIdx = 0;
                     for (auto row : windowRowset) {
                         // localize U
-                        windowLocalIndices[row] = localIdx;
+                        windowLocalIndicesU[row] = localIdx;
                         localToGlobalU_[s][windowIdx][localIdx] =
                             row;
                         localIdx++;
+                    }
+
+                    // for each index we dont have, we need to set a local index
+                    // and obtain the remote index.. hardddd?! no
+                    // lets consider windowLocalIndices
+                    std::map<TIdx, TIdx> windowLocalIndicesV = stripLocalIndicesV;
+                    TIdx nonlocalIdx = stripLocalIndicesV.size();
+                    for (auto col : windowColset) {
+                        if (!windowLocalIndicesV.find(col)) {
+                            windowLocalIndicesV[col] = nonlocalIdx++;
+                        }
+                        windowChunks[s][windowIdx].nonLocalOwners.push_back(owners[col]);
+                        windowChunks[s][windowIdx].nonLocalIndices.push_back(stripLocalIndices[owners[col]][col]);
                     }
 
                     // localize window indices. Note that some indices are nonlocal
                     // here we need to find these and insert them in 'windowLocalIndices'
                     for (auto& triplet :
                          windowChunks[s][windowIdx].triplets) {
-                        triplet.setCol(stripLocalIndices[s][chunk.col()]);
-                        triplet.setRow(windowLocalIndices[triplet.row()]);
+                        triplet.setCol(windowLocalIndicesV[triplet.col()]);
+                        triplet.setRow(windowLocalIndicesU[triplet.row()]);
                     }
                 }
             }
@@ -275,9 +300,6 @@ class SparseStream
                 }
             }
         }
-
-        // TODO TODO TODO: STATUS: besides local indices all the code is in
-        // place, still need a way to structurally check this code
 
         ZeeLogDebug << "Finished constructing stream" << endLog;
     }
