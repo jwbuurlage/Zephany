@@ -210,15 +210,21 @@ class SparseStream
         }
 
         // localize strip indices
+        std::array<std::map<TIdx, TIdx>, stream_config::processors>
+            stripLocalIndices;
+
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             for (TIdx strip = 0; strip < strips; ++strips) {
                 // better to do this in one run.. here we localize the strip
                 // indices using a local map
-                std::map<TIdx, TIdx> stripLocalIndices;
                 for (TIdx i = 0; i < stripIndicesV[s][strip].size(); ++i) {
-                    stripLocalIndices[stripIndicesV[s][strip][i]] = i;
+                    stripLocalIndices[s][stripIndicesV[s][strip][i]] = i;
                 }
+            }
+        }
 
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            for (TIdx strip = 0; strip < strips; ++strips) {
                 for (TIdx window = 0; window < windows; ++window) {
                     std::map<TIdx, TIdx> windowLocalIndices;
                     auto windowIdx = strip * windows + window;
@@ -236,10 +242,11 @@ class SparseStream
                         localIdx++;
                     }
 
-                    // localize window indices
+                    // localize window indices. Note that some indices are nonlocal
+                    // here we need to find these and insert them in 'windowLocalIndices'
                     for (auto& triplet :
                          windowChunks[s][windowIdx].triplets) {
-                        triplet.setCol(stripLocalIndices[chunk.col()]);
+                        triplet.setCol(stripLocalIndices[s][chunk.col()]);
                         triplet.setRow(windowLocalIndices[triplet.row()]);
                     }
                 }
