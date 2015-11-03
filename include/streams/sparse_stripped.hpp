@@ -10,7 +10,7 @@ struct SparseStreamHeader {
     TIdx maxSizeU;
     TIdx maxSizeV;
     TIdx maxWindowSize;
-    TIdx maxSizeLocal;
+    TIdx maxNonLocal;
     TIdx numStrips;
 
     void write(void** address) const {
@@ -20,7 +20,7 @@ struct SparseStreamHeader {
         ptr[0] = maxSizeU;
         ptr[1] = maxSizeV;
         ptr[2] = maxWindowSize;
-        ptr[3] = maxSizeLocal;
+        ptr[3] = maxNonLocal;
         ptr[4] = numStrips;
         address += this->sizeInBytes();
     }
@@ -57,7 +57,7 @@ struct SparseStreamWindow {
     std::vector<TIdx> nonLocalOwners;
     std::vector<TIdx> nonLocalIndices;
 
-    std::vector<Triplet> triplets;
+    std::vector<Triplet<TVal, TIdx>> triplets;
 
     void write(void** address) const {
         // write to address and add to address pointer
@@ -65,7 +65,7 @@ struct SparseStreamWindow {
         TIdx i = 0;
         ptr[i++] = (TIdx)nonLocalOwners.size();
         for (auto owner : nonLocalOwners)
-            ptr[i++] = val;
+            ptr[i++] = owner;
         for (auto indices : nonLocalIndices)
             ptr[i++] = indices;
         ptr[i++] = (TIdx)triplets.size();
@@ -100,7 +100,7 @@ class SparseStream
 
     ~SparseStream() {
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            operator delete sparseData_[s];
+            operator delete(sparseData_[s]);
         }
     }
 
@@ -125,7 +125,7 @@ class SparseStream
         TIdx strips = (A_.getCols() - 1) / stripSize_ + 1;
         TIdx windows = (A_.getRows() - 1) / windowSize_ + 1;
 
-        std::array<std::vector<SparseStreamWindow>,
+        std::array<std::vector<SparseStreamWindow<TVal, TIdx>>,
                    stream_config::processors> windowChunks;
 
         std::array<std::vector<std::set<TIdx>>, stream_config::processors>
@@ -155,13 +155,16 @@ class SparseStream
             ++s;
         }
 
-        std::array<std::vector<SparseStreamStripHeader>,
+        std::array<std::vector<SparseStreamStripHeader<TVal, TIdx>>,
                    stream_config::processors> stripHeaders;
-        std::array<std::vector<TIdx>, stream_config::processors> stripIndicesV;
+        std::array<std::vector<std::vector<TIdx>>, stream_config::processors>
+            stripIndicesV;
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            stripHeaders[s].v.resize(strips);
-            stripHeaders[s].numWindows = windows;
+            stripHeaders[s].resize(strips);
+            for (TIdx strip = 0; strip < strips; ++strip) {
+                stripHeaders[s][strip].numWindows = windows;
+            }
         }
 
         auto& owners = v_.getOwners();
@@ -180,7 +183,8 @@ class SparseStream
 
         // now we have a list of windows and strips
         // we now need:
-        std::array<TIdx, stream_config::processors> headers;
+        std::array<SparseStreamHeader<TIdx>, stream_config::processors>
+            headers;
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             for (TIdx windowIdx = 0; windowIdx < strips * windows;
                  ++windowIdx) {
@@ -191,8 +195,8 @@ class SparseStream
                     stripIndicesV[s][windowIdx / windows].size() - sizeV;
 
                 // TODO TODO TODO WHICH INDICES
-                windowChunks[s][windowIdx].nonLocalOwners.resize() = nonLocal;
-                windowChunks[s][windowIdx].nonLocalIndices.resize() = nonLocal;
+                windowChunks[s][windowIdx].nonLocalOwners.resize(nonLocal);
+                windowChunks[s][windowIdx].nonLocalIndices.resize(nonLocal);
 
                 if (sizeV > headers[s].maxSizeV)
                     headers[s].maxSizeV = sizeV;
@@ -234,7 +238,7 @@ class SparseStream
                     localToGlobalU_[s][windowIdx].resize(
                         windowRowset.size());
                     TIdx localIdx = 0;
-                    for (auto row : windowRowset) {
+                    for (auto row : windowRowset[s][windowIdx]) {
                         // localize U
                         windowLocalIndices[row] = localIdx;
                         localToGlobalU_[s][windowIdx][localIdx] =
@@ -246,7 +250,7 @@ class SparseStream
                     // here we need to find these and insert them in 'windowLocalIndices'
                     for (auto& triplet :
                          windowChunks[s][windowIdx].triplets) {
-                        triplet.setCol(stripLocalIndices[s][chunk.col()]);
+                        triplet.setCol(stripLocalIndices[s][triplet.col()]);
                         triplet.setRow(windowLocalIndices[triplet.row()]);
                     }
                 }
