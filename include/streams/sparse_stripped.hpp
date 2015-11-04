@@ -1,7 +1,21 @@
 #pragma once
 
+// TODO:
+// [ ] 'raw' stream with variable chunk sizeInBytes
+//   [ ] include header sizes
+//   [ ] write header sizes
+//   [ ] check create_down_stream_raw
+// [ ] check if indices get constructed correctly
+// [ ] create up stream
+// [ ] gather partial results of u_j with correct indices
+// [ ] to avoid copies maybe we move v into a separate stream
+
 #include "streams.hpp"
 #include "stdint.h"
+
+// FIXME
+void ebsp_create_down_stream_raw(void*, unsigned int, unsigned int,
+                                 unsigned int) { }
 
 namespace Zephany {
 
@@ -105,11 +119,16 @@ class SparseStream
     }
 
     void create() const override {
-        // TODO implement
-        ZeeLogDebug << "SparseStream::create() not implemented" << endLog;
+        for (TIdx s = 0; s < stream_config::processors; s++) {
+            ebsp_create_down_stream_raw((void*)(this->sparseData_[s]), s,
+                                        0,  // total size FIXME
+                                        0); // max chunk size (needed?) FIXME
+        }
     }
 
     void prepareStream() {
+        ZeeLogDebug << "SparseStream::prepareStream()" << endLog;
+
         ZeeAssert(A_.getRows() > windowSize_ && A_.getCols() > stripSize_);
 
         ZeeLogVar(A_.getRows());
@@ -162,6 +181,7 @@ class SparseStream
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
             stripHeaders[s].resize(strips);
+            stripIndicesV[s].resize(strips);
             for (TIdx strip = 0; strip < strips; ++strip) {
                 stripHeaders[s][strip].numWindows = windows;
             }
@@ -192,7 +212,7 @@ class SparseStream
                 TIdx sizeU = windowRowset[s][windowIdx].size();
                 TIdx sizeWindow = windowChunks[s][windowIdx].triplets.size();
                 TIdx nonLocal =
-                    stripIndicesV[s][windowIdx / windows].size() - sizeV;
+                    sizeV - stripIndicesV[s][windowIdx / windows].size();
 
                 // TODO TODO TODO WHICH INDICES
                 windowChunks[s][windowIdx].nonLocalOwners.resize(nonLocal);
@@ -213,12 +233,13 @@ class SparseStream
             localToGlobalU_[s].resize(strips * windows);
         }
 
+
         // localize strip indices
         std::array<std::map<TIdx, TIdx>, stream_config::processors>
             stripLocalIndices;
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            for (TIdx strip = 0; strip < strips; ++strips) {
+            for (TIdx strip = 0; strip < strips; ++strip) {
                 // better to do this in one run.. here we localize the strip
                 // indices using a local map
                 for (TIdx i = 0; i < stripIndicesV[s][strip].size(); ++i) {
@@ -228,9 +249,9 @@ class SparseStream
         }
 
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            for (TIdx strip = 0; strip < strips; ++strips) {
+            for (TIdx strip = 0; strip < strips; ++strip) {
                 for (TIdx window = 0; window < windows; ++window) {
-                    std::map<TIdx, TIdx> windowLocalIndices;
+                    std::map<TIdx, TIdx> windowLocalIndicesU;
                     auto windowIdx = strip * windows + window;
 
                     // NOTE: store mapping for u for every proc, otherwise we
@@ -240,18 +261,32 @@ class SparseStream
                     TIdx localIdx = 0;
                     for (auto row : windowRowset[s][windowIdx]) {
                         // localize U
-                        windowLocalIndices[row] = localIdx;
+                        windowLocalIndicesU[row] = localIdx;
                         localToGlobalU_[s][windowIdx][localIdx] =
                             row;
                         localIdx++;
+                    }
+
+                    // for each index we dont have, we need to set a local index
+                    // and obtain the remote index.. hardddd?! no
+                    // lets consider windowLocalIndices
+                    std::map<TIdx, TIdx> windowLocalIndicesV =
+                        stripLocalIndices[s]; // this is in a single strip
+                    TIdx nonLocalIdx = stripLocalIndices[s].size();
+                    for (auto col : windowColset[s][windowIdx]) {
+                        if (windowLocalIndicesV.find(col) != windowLocalIndicesV.end()) {
+                            windowLocalIndicesV[col] = nonLocalIdx++;
+                        }
+                        windowChunks[s][windowIdx].nonLocalOwners.push_back(owners[col]);
+                        windowChunks[s][windowIdx].nonLocalIndices.push_back(stripLocalIndices[owners[col]][col]);
                     }
 
                     // localize window indices. Note that some indices are nonlocal
                     // here we need to find these and insert them in 'windowLocalIndices'
                     for (auto& triplet :
                          windowChunks[s][windowIdx].triplets) {
-                        triplet.setCol(stripLocalIndices[s][triplet.col()]);
-                        triplet.setRow(windowLocalIndices[triplet.row()]);
+                        triplet.setCol(windowLocalIndicesV[triplet.col()]);
+                        triplet.setRow(windowLocalIndicesU[triplet.row()]);
                     }
                 }
             }
@@ -259,7 +294,7 @@ class SparseStream
 
         std::array<TIdx, stream_config::processors> streamSize;
         for (TIdx s = 0; s < stream_config::processors; ++s) {
-            streamSize[s] += headers[s].sizeInBytes();
+            streamSize[s] = headers[s].sizeInBytes();
             for (TIdx strip = 0; strip < strips; ++strip) {
                 streamSize[s] += stripHeaders[s][strip].sizeInBytes();
                 for (TIdx window = 0; window < windows; ++window) {
@@ -268,6 +303,7 @@ class SparseStream
                 }
             }
 
+            ZeeLogVar(streamSize[s]);
             sparseData_[s] = operator new(streamSize[s]);
 
             headers[s].write(&sparseData_[s]);
@@ -279,9 +315,6 @@ class SparseStream
                 }
             }
         }
-
-        // TODO TODO TODO: STATUS: besides local indices all the code is in
-        // place, still need a way to structurally check this code
 
         ZeeLogDebug << "Finished constructing stream" << endLog;
     }

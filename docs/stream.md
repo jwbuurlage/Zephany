@@ -48,8 +48,7 @@ tripletVals      `float[windowSize]`
 
 - A in use
 - A next
-- remote owners
-- remote indices
-- v local
-- v from remote
+- remote owners (in chunk)
+- remote indices (in chunk)
+- v local and from remote (combined)
 - u (always local)
