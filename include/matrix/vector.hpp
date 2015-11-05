@@ -24,6 +24,8 @@ class DStreamingVector
 
         TVal operator[](TIdx i) const { return elements_[i]; }
 
+        TVal& at(TIdx i) { return elements_[i]; }
+
     private:
         std::vector<TIdx> owners_;
         std::vector<TVal> elements_;

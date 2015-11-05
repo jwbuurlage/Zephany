@@ -60,7 +60,7 @@ class UpStream : public Stream<T, TIdx> {
 
     void create() const override {}
 
-    void createUp() {
+    virtual void createUp() {
         ZeeAssert(this->chunkSize_ != 0);
         ZeeAssert(this->totalSize_ != 0);
 
@@ -76,7 +76,7 @@ class UpStream : public Stream<T, TIdx> {
         return rawData_;
     }
 
-  private:
+  protected:
     std::array<T*, stream_config::processors> rawData_;
 };
 

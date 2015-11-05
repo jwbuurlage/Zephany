@@ -9,13 +9,14 @@
 // [ ] create up stream
 // [ ] gather partial results of u_j with correct indices
 // [ ] to avoid copies maybe we move v into a separate stream
+// [ ] what about upStream? also create
+// [ ] values of v are not at all important, so maybe ignore these
+//     and write them only at spmv
 
+#include <host_bsp.h>
 #include "streams.hpp"
 #include "stdint.h"
-
-// FIXME
-void ebsp_create_down_stream_raw(void*, unsigned int, unsigned int,
-                                 unsigned int) { }
+#include "../matrix/sparse.hpp"
 
 namespace Zephany {
 
@@ -72,6 +73,7 @@ struct SparseStreamWindow {
     std::vector<TIdx> nonLocalIndices;
 
     std::vector<Triplet<TVal, TIdx>> triplets;
+    TIdx sizeU;
 
     void write(void** address) const {
         // write to address and add to address pointer
@@ -80,8 +82,10 @@ struct SparseStreamWindow {
         ptr[i++] = (TIdx)nonLocalOwners.size();
         for (auto owner : nonLocalOwners)
             ptr[i++] = owner;
+
         for (auto indices : nonLocalIndices)
             ptr[i++] = indices;
+        ptr[i++] = sizeU;
         ptr[i++] = (TIdx)triplets.size();
         for (auto& triplet : triplets)
             ptr[i++] = triplet.row();
@@ -96,7 +100,7 @@ struct SparseStreamWindow {
 
     unsigned int sizeInBytes() const {
         return sizeof(TIdx) *
-                   (2 * triplets.size() + 2 * nonLocalOwners.size()) +
+                   (2 * triplets.size() + 2 * nonLocalOwners.size() + 1) +
                sizeof(TVal) * triplets.size();
     }
 };
@@ -120,7 +124,7 @@ class SparseStream
 
     void create() const override {
         for (TIdx s = 0; s < stream_config::processors; s++) {
-            ebsp_create_down_stream_raw((void*)(this->sparseData_[s]), s,
+            ebsp_create_down_stream_raw((const void*)(this->sparseData_[s]), s,
                                         0,  // total size FIXME
                                         0); // max chunk size (needed?) FIXME
         }
@@ -214,14 +218,18 @@ class SparseStream
                 TIdx nonLocal =
                     sizeV - stripIndicesV[s][windowIdx / windows].size();
 
-                // TODO TODO TODO WHICH INDICES
                 windowChunks[s][windowIdx].nonLocalOwners.resize(nonLocal);
                 windowChunks[s][windowIdx].nonLocalIndices.resize(nonLocal);
+                windowChunks[s][windowIdx].sizeU = sizeU;
+                windowSizeU_[s][windowIdx] = sizeU;
+                upStreamSize_[s] += sizeU * sizeof(TIdx);
 
                 if (sizeV > headers[s].maxSizeV)
                     headers[s].maxSizeV = sizeV;
-                if (sizeU > headers[s].maxSizeU)
+                if (sizeU > headers[s].maxSizeU) {
                     headers[s].maxSizeU = sizeU;
+                    upStreamChunkSize_[s] = sizeU;
+                }
                 if (sizeWindow > headers[s].maxWindowSize)
                     headers[s].maxWindowSize = sizeWindow;
                 if (nonLocal > headers[s].maxNonLocal)
@@ -319,6 +327,24 @@ class SparseStream
         ZeeLogDebug << "Finished constructing stream" << endLog;
     }
 
+    TIdx upStreamSize(TIdx proc) const {
+        return upStreamSize_[proc];
+    }
+
+    TIdx upStreamChunkSize(TIdx proc) const {
+        return upStreamChunkSize_[proc];
+    }
+
+    const std::array<std::vector<std::vector<TIdx>>, stream_config::processors>&
+    getLocalToGlobalU() const {
+        return localToGlobalU_;
+    }
+
+    const std::array<std::vector<TIdx>, stream_config::processors>&
+    getWindowSizeU() const {
+        return windowSizeU_;
+    }
+
   private:
     TMatrix& A_;
     TVector& v_;
@@ -329,7 +355,64 @@ class SparseStream
     std::array<std::vector<std::vector<TIdx>>, stream_config::processors>
         localToGlobalU_;
 
+    std::array<TIdx, stream_config::processors> upStreamSize_;
+    std::array<TIdx, stream_config::processors> upStreamChunkSize_;
+    std::array<std::vector<TIdx>, stream_config::processors> windowSizeU_;
+
     std::array<void*, stream_config::processors> sparseData_;
+};
+
+template <typename TVal, typename TIdx>
+class SpMVUpStream
+    : UpStream<TVal, TIdx> {
+  public:
+    SpMVUpStream() : chunkSizes_(), totalSizes_() {}
+
+    void createUp() override {
+        ZeeAssert(this->chunkSize_ != 0);
+        ZeeAssert(this->totalSize_ != 0);
+
+        TIdx totalSize = this->getTotalSize();
+        TIdx chunkSize = this->getChunkSize();
+
+        for (TIdx s = 0; s < stream_config::processors; s++) {
+            this->rawData_[s] =
+                (TVal*)ebsp_create_up_stream(s, totalSize, chunkSize);
+        }
+    }
+
+    void setChunkSize(TIdx proc, TIdx size) {
+        chunkSizes_[proc] = size;
+    }
+
+    void setTotalSize(TIdx proc, TIdx size) {
+        totalSizes_[proc] = size;
+    }
+
+    void fill(DStreamingVector<TVal, TIdx>& u,
+              const SparseStream<DStreamingSparseMatrix<TVal, TIdx>,
+                                 DStreamingVector<TVal, TIdx>>& downStream) {
+        auto& localToGlobalU = downStream.getLocalToGlobalU();
+
+        for (TIdx s = 0; s < stream_config::processors; ++s) {
+            TIdx offset = 0;
+            TIdx windowIdx = 0;
+            TIdx globalIdx = 0;
+            TVal* data = this->rawData_[s];
+            while (offset < totalSizes_[s]) {
+                for (TIdx idx = 0; idx < downStream.getWindowSizeU()[s][windowIdx];
+                     ++idx) {
+                    u.at(localToGlobalU[s][windowIdx][idx]) = data[globalIdx++];
+                }
+                ++windowIdx;
+            }
+        }
+    }
+
+  private:
+    // these are per processor
+    std::array<TIdx, stream_config::processors> chunkSizes_ = 0;
+    std::array<TIdx, stream_config::processors> totalSizes_ = 0;
 };
 
 } // namespace Zephany

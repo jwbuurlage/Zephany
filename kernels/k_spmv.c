@@ -13,15 +13,15 @@ int main() {
     ebsp_move_chunk_down((void**)&chunk, 0, double_buffer);
 
     // the first chunk contains the header
-    uint max_size_u = chunk[0];
+    //uint max_size_u = chunk[0]; // FIXME obsolete
     uint max_size_v = chunk[1];
-    uint max_size_window = chunk[2];
+    //uint max_size_window = chunk[2]; // FIXME obsolete
     uint max_non_local = chunk[3];
     uint num_strips = chunk[4];
 
     uint* v = ebsp_malloc((max_size_v + max_non_local) * sizeof(float));
     uint* u = NULL;
-    ebsp_open_up_stream(&u, 1);
+    ebsp_open_up_stream((void**)&u, 1);
 
     bsp_push_reg(v, sizeof(uint) * max_non_local + max_size_v);
     bsp_sync();
@@ -59,12 +59,13 @@ int main() {
             }
             ebsp_barrier();
 
+            uint size_u = chunk[cursor++];
             uint window_size = chunk[cursor++];
 
             uint* triplet_rows = &chunk[cursor];
             cursor += window_size;
 
-            uint* triplet_rows = &chunk[cursor];
+            uint* triplet_cols = &chunk[cursor];
             cursor += window_size;
 
             float* triplet_vals = (float*)&chunk[cursor];
@@ -75,7 +76,8 @@ int main() {
             }
 
             // send result up
-            ebsp_move_chunk_up(&u, 1, double_buffer);
+            ebsp_set_up_chunk_size(1, sizeof(uint) * size_u);
+            ebsp_move_chunk_up((void**)&u, 1, double_buffer);
         }
 
     }

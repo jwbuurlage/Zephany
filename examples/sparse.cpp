@@ -35,12 +35,7 @@ int main() {
     SparseStream<decltype(S), decltype(x)> sparseStream(S, x, 50, 50);
     sparseStream.prepareStream();
 
-
-    // TODO: create up stream
-
-    // TODO: attach streams to S?
-
-    // y = S * x;
+    y = S * x;
 
     return 0;
 }

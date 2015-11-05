@@ -37,6 +37,7 @@ v                `uint32_t[numLocalV]`
 numNonLocal      `uint32_t`
 nonLocalOwners   `uint32_t[numNonLocal]`
 nonLocalIdxs     `uint32_t[numNonLocal]`
+sizeU            `uint32_t`
 windowSize       `uint32_t`
 tripletRows      `uint32_t[windowSize]`
 tripletCols      `uint32_t[windowSize]`
