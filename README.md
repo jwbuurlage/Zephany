@@ -1,4 +1,4 @@
-Zephiny
+Zephany
 -------
 
 Linear Algebra library for the Parallella, based on Zee and Epiphany BSP.
@@ -7,6 +7,4 @@ Linear Algebra library for the Parallella, based on Zee and Epiphany BSP.
 
     gcc-linaro-4.9-2015.02-3-x86_64_arm-linux-gnueabi
 
-    maybe gnueabihf?
-
-  or a more recent version.
+or a more recent version.
