@@ -2,7 +2,7 @@ extern "C" {
 #include <host_bsp.h>
 }
 
-#include "streams.hpp"
+#include "streams/streams.hpp"
 
 namespace Zephany {
 
@@ -16,26 +16,39 @@ DStreamingVector<TVal, TIdx> perform_operation(
         DStreamingVector<TVal, TIdx>> op)
 {
     const auto& A = op.getLHS();
-    const auto& x = op.getRHS();
-    DStreamingVector<TVal, TIdx> y(A.getRows(), 1.0);
+    const auto& v = op.getRHS();
+    DStreamingVector<TVal, TIdx> u(A.getRows(), 1.0);
 
     ZeeLogInfo << "SpMV on Epiphany" << endLog;
     ZeeLogVar(A.nonZeros());
-    ZeeLogVar(x.size());
+    ZeeLogVar(v.size());
 
     // Initialize the BSP system
-    bsp_init("kernels/k_hello_world.srec", 0, 0);
+    bsp_init("kernels/k_spmv.srec", 0, 0);
 
     // Initialize the Epiphany system and load the binary
     bsp_begin(bsp_nprocs());
 
+    const auto& stream = A.getStream();
+    SpMVUpStream<TVal, TIdx> upStream;
+    for (TIdx s = 0; s < stream_config::processors; ++s) {
+        upStream.setChunkSize(s, stream.upStreamChunkSize(s));
+        upStream.setTotalSize(s, stream.upStreamSize(s));
+    }
+
+    stream.create();
+    upStream.createUp();
+
     // Run the program on the Epiphany cores
     ebsp_spmd();
+
+    // Gather U
+    upStream.fill(u, stream);
 
     // Finalize
     bsp_end();
 
-    return y;
+    return u;
 }
 
 template <typename TVal, typename TIdx>

@@ -15,4 +15,7 @@ License, or (at your option) any later version.
 #include "matrix/dense.hpp"
 #include "matrix/sparse.hpp"
 #include "matrix/vector.hpp"
-#include "operations.hpp"
+#include "streams/streams.hpp"
+#include "streams/matrix_block.hpp"
+#include "streams/sparse_stripped.hpp"
+#include "operations/operations.hpp"

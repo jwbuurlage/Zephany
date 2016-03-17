@@ -1,13 +1,16 @@
+#pragma once
+
 #include <zee.hpp>
 
-#include "../streams.hpp"
+#include "../streams/streams.hpp"
+#include "../streams/matrix_block.hpp"
 
 namespace Zephany {
 
 using namespace Zee;
 
 #ifndef ZEPHANY_DEFAULT_INNER_SIZE
-#define ZEPHANY_DEFAULT_INNER_SIZE 32
+#define ZEPHANY_DEFAULT_INNER_SIZE 25
 #endif
 
 template <typename TVal = default_scalar_type,
